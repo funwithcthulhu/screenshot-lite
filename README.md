@@ -44,7 +44,8 @@ Redact an image by filling a rectangle with black pixels:
 shotlite redact input.png --rect 10,20,200,80
 ```
 
-By default, redaction writes `input-redacted.png`. Use `--output` to choose another path.
+By default, redaction writes `input-redacted.png` and leaves the input file unchanged.
+Use `--output` to choose another path.
 
 Show or set the output directory:
 

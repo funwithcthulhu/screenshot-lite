@@ -23,7 +23,7 @@ pub struct ImageRect {
     height: u32,
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Eq, PartialEq)]
 pub enum RectParseError {
     #[error("rect must use x,y,w,h")]
     WrongPartCount,
@@ -177,6 +177,10 @@ fn default_output_path(input: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     #[test]
     fn parses_rect() {
@@ -193,7 +197,8 @@ mod tests {
 
     #[test]
     fn rejects_empty_rect() {
-        assert!("1,2,0,4".parse::<Rect>().is_err());
+        assert_eq!("1,2,0,4".parse::<Rect>(), Err(RectParseError::Empty));
+        assert_eq!("1,2,3,0".parse::<Rect>(), Err(RectParseError::Empty));
     }
 
     #[test]
@@ -225,7 +230,46 @@ mod tests {
             height: 1,
         };
 
-        assert!(rect.checked_for_image(10, 10).is_err());
+        assert!(matches!(
+            rect.checked_for_image(10, 10),
+            Err(RedactError::RectOutOfBounds {
+                image_width: 10,
+                image_height: 10
+            })
+        ));
+    }
+
+    #[test]
+    fn rejects_negative_rect_coordinates() {
+        let rect = Rect {
+            x: -1,
+            y: 0,
+            width: 1,
+            height: 1,
+        };
+
+        assert!(matches!(
+            rect.checked_for_image(10, 10),
+            Err(RedactError::RectOutOfBounds {
+                image_width: 10,
+                image_height: 10
+            })
+        ));
+
+        let rect = Rect {
+            x: 0,
+            y: -1,
+            width: 1,
+            height: 1,
+        };
+
+        assert!(matches!(
+            rect.checked_for_image(10, 10),
+            Err(RedactError::RectOutOfBounds {
+                image_width: 10,
+                image_height: 10
+            })
+        ));
     }
 
     #[test]
@@ -246,5 +290,111 @@ mod tests {
 
         assert_eq!(image.get_pixel(1, 1), &Rgba([0, 0, 0, 255]));
         assert_eq!(image.get_pixel(0, 0), &Rgba([255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn default_output_path_is_predictable() {
+        assert_eq!(
+            default_output_path(Path::new("input.png")),
+            PathBuf::from("input-redacted.png")
+        );
+        assert_eq!(
+            default_output_path(Path::new("nested/input.png")),
+            PathBuf::from("nested").join("input-redacted.png")
+        );
+    }
+
+    #[test]
+    fn redact_file_writes_new_file_and_leaves_input_unchanged() {
+        let dir = temp_test_dir("default-output");
+        let input = dir.join("input.png");
+        write_test_image(&input);
+        let original = fs::read(&input).unwrap();
+
+        let output = redact_file(
+            &input,
+            Rect {
+                x: 1,
+                y: 1,
+                width: 2,
+                height: 2,
+            },
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(output, dir.join("input-redacted.png"));
+        assert_eq!(fs::read(&input).unwrap(), original);
+        assert_ne!(fs::read(&output).unwrap(), original);
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn redact_file_honors_explicit_output_path() {
+        let dir = temp_test_dir("explicit-output");
+        let input = dir.join("input.png");
+        let output = dir.join("chosen.png");
+        write_test_image(&input);
+
+        let actual = redact_file(
+            &input,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
+            Some(output.clone()),
+        )
+        .unwrap();
+
+        assert_eq!(actual, output);
+        assert!(actual.exists());
+        assert!(!dir.join("input-redacted.png").exists());
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn redact_file_preserves_dimensions() {
+        let dir = temp_test_dir("dimensions");
+        let input = dir.join("input.png");
+        let output = dir.join("output.png");
+        write_test_image(&input);
+
+        redact_file(
+            &input,
+            Rect {
+                x: 1,
+                y: 1,
+                width: 2,
+                height: 2,
+            },
+            Some(output.clone()),
+        )
+        .unwrap();
+
+        let image = image::open(output).unwrap();
+        assert_eq!(image.width(), 4);
+        assert_eq!(image.height(), 3);
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn write_test_image(path: &Path) {
+        let mut image = RgbaImage::from_pixel(4, 3, Rgba([255, 255, 255, 255]));
+        image.put_pixel(0, 0, Rgba([10, 20, 30, 255]));
+        image.save(path).unwrap();
+    }
+
+    fn temp_test_dir(name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("shotlite-{name}-{unique}"));
+        fs::create_dir(&path).unwrap();
+        path
     }
 }

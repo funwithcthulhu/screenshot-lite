@@ -115,4 +115,16 @@ mod tests {
         assert!(text.contains("output_dir"));
         assert!(text.contains("shots"));
     }
+
+    #[test]
+    fn config_toml_round_trips_output_dir() {
+        let config = Config {
+            output_dir: PathBuf::from("custom-shots"),
+        };
+
+        let text = config.to_toml().unwrap();
+        let parsed: Config = toml::from_str(&text).unwrap();
+
+        assert_eq!(parsed.output_dir, PathBuf::from("custom-shots"));
+    }
 }
