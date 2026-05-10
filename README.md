@@ -62,4 +62,4 @@ shotlite config set output-dir C:\Users\you\Pictures\Screenshots
 
 ## License
 
-No license file is included yet.
+Licensed under either MIT or Apache-2.0, at your option.
