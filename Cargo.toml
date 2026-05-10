@@ -1,0 +1,16 @@
+[package]
+name = "shotlite"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+arboard = "3.6.1"
+chrono = { version = "0.4.42", default-features = false, features = ["clock"] }
+clap = { version = "4.5.51", features = ["derive"] }
+directories = "6.0.0"
+image = { version = "0.25.9", default-features = false, features = ["png"] }
+serde = { version = "1.0.228", features = ["derive"] }
+thiserror = "2.0.17"
+toml = "0.9.8"
+xcap = "0.9.4"
