@@ -2,11 +2,14 @@ mod capture;
 mod cli;
 mod clipboard;
 mod config;
+mod editor;
 mod file_action;
+mod interactive;
 mod paths;
 mod redact;
+mod tray;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::Parser;
 
 use crate::{
@@ -40,16 +43,22 @@ fn main() -> Result<()> {
             clipboard,
         } => {
             let output = capture_output(output, output_dir)?;
+            let rect = match rect {
+                Some(rect) => Some(rect),
+                None => Some(interactive::select_region()?),
+            };
             let capture = capture::capture_region_to(output, rect)?;
             maybe_copy(clipboard, &capture.image)?;
             after_capture(&capture.path, open, reveal)?;
             println!("{}", capture.path.display());
         }
         Command::Edit { file } => {
-            bail!(
-                "edit is not implemented yet for {}; use `shotlite redact` for pixel redaction",
-                file.display()
-            );
+            let output = editor::edit_file(&file)
+                .with_context(|| format!("failed to edit {}", file.display()))?;
+            println!("{}", output.display());
+        }
+        Command::Tray => {
+            tray::run()?;
         }
         Command::Redact { file, rect, output } => {
             let output = redact::redact_file(&file, rect, output)

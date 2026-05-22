@@ -43,6 +43,7 @@ pub enum Command {
     Edit {
         file: PathBuf,
     },
+    Tray,
     Redact {
         file: PathBuf,
         #[arg(long)]

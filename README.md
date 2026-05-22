@@ -5,7 +5,7 @@
 It currently supports:
 
 - full-screen capture
-- rectangle capture with explicit coordinates
+- rectangle capture with explicit coordinates or a Windows selection overlay
 - PNG output to a configured directory
 - copying captures to the clipboard when the platform clipboard is available
 - destructive pixel redaction into a new PNG file
@@ -41,10 +41,11 @@ shotlite full --output .\shots\screen.png
 Capture a rectangle:
 
 ```
+shotlite region
 shotlite region --rect 10,20,400,300
 ```
 
-Region capture is coordinate-only for now; interactive selection is intentionally not implemented yet.
+Interactive region selection is currently Windows-only. Use `--rect x,y,w,h` where the overlay is not available.
 
 Copy a capture to the clipboard too:
 
@@ -75,6 +76,26 @@ shotlite highlight input.png --rect 10,20,200,80
 shotlite crop input.png --rect 10,20,200,80
 ```
 
+Open a minimal editor window for an existing image:
+
+```
+shotlite edit input.png
+```
+
+In the editor, drag a rectangle, then press `R` to redact, `H` to highlight, or `C` to crop.
+
+Run the Windows tray app:
+
+```
+shotlite tray
+```
+
+Tray hotkeys:
+
+- `Ctrl+Shift+1`: full-screen capture
+- `Ctrl+Shift+2`: region capture
+- `Ctrl+Shift+Q`: quit tray mode
+
 Show or set the output directory:
 
 ```
@@ -85,9 +106,13 @@ shotlite config set output-dir C:\Users\you\Pictures\Screenshots
 
 ## Limitations
 
-- Interactive region selection is not implemented yet. Use `region --rect x,y,w,h`.
+- Interactive region selection and tray mode are currently Windows-only.
 - Clipboard support depends on the local platform clipboard.
 - Capture support depends on `xcap` support for the current desktop/session.
+
+## Packaging
+
+Windows packaging scripts are in `scripts/`.
 
 ## License
 
