@@ -12,11 +12,12 @@ fn shotlite() -> Command {
 }
 
 #[test]
-fn redact_command_honors_explicit_output() {
+fn redact_command_writes_new_file_and_leaves_input_unchanged() {
     let dir = temp_test_dir("redact-output");
     let input = dir.join("input.png");
     let output = dir.join("chosen.png");
     write_test_image(&input);
+    let original = fs::read(&input).unwrap();
 
     let result = shotlite()
         .args([
@@ -41,28 +42,33 @@ fn redact_command_honors_explicit_output() {
     );
     assert!(output.exists());
     assert!(!dir.join("input-redacted.png").exists());
+    assert_eq!(fs::read(&input).unwrap(), original);
+    let output_image = image::open(&output).unwrap();
+    assert_eq!(output_image.width(), 4);
+    assert_eq!(output_image.height(), 3);
 
     fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
-fn redact_command_rejects_invalid_rect() {
-    let dir = temp_test_dir("bad-rect");
-    let input = dir.join("input.png");
-    write_test_image(&input);
+fn redact_command_rejects_zero_width_rect() {
+    assert_redact_fails_with("1,1,0,2", "rect width and height must be greater than zero");
+}
 
-    let result = shotlite()
-        .args(["redact", input.to_str().unwrap(), "--rect", "1,1,0,2"])
-        .output()
-        .unwrap();
+#[test]
+fn redact_command_rejects_zero_height_rect() {
+    assert_redact_fails_with("1,1,2,0", "rect width and height must be greater than zero");
+}
 
-    assert!(!result.status.success());
-    assert!(
-        String::from_utf8_lossy(&result.stderr)
-            .contains("rect width and height must be greater than zero")
-    );
+#[test]
+fn redact_command_rejects_negative_coordinates() {
+    assert_redact_fails_with("-1,0,1,1", "rect is outside image bounds (4x3)");
+    assert_redact_fails_with("0,-1,1,1", "rect is outside image bounds (4x3)");
+}
 
-    fs::remove_dir_all(dir).unwrap();
+#[test]
+fn redact_command_rejects_rect_outside_image_bounds() {
+    assert_redact_fails_with("3,2,2,1", "rect is outside image bounds (4x3)");
 }
 
 #[test]
@@ -88,6 +94,31 @@ fn write_test_image(path: &Path) {
     let mut image = RgbaImage::from_pixel(4, 3, Rgba([255, 255, 255, 255]));
     image.put_pixel(0, 0, Rgba([10, 20, 30, 255]));
     image.save(path).unwrap();
+}
+
+fn assert_redact_fails_with(rect: &str, expected: &str) {
+    let dir = temp_test_dir("bad-rect");
+    let input = dir.join("input.png");
+    write_test_image(&input);
+    let original = fs::read(&input).unwrap();
+
+    let result = shotlite()
+        .arg("redact")
+        .arg(input.to_str().unwrap())
+        .arg(format!("--rect={rect}"))
+        .output()
+        .unwrap();
+
+    assert!(!result.status.success());
+    assert!(
+        String::from_utf8_lossy(&result.stderr).contains(expected),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(fs::read(&input).unwrap(), original);
+    assert!(!dir.join("input-redacted.png").exists());
+
+    fs::remove_dir_all(dir).unwrap();
 }
 
 fn temp_test_dir(name: &str) -> PathBuf {
