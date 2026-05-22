@@ -4,7 +4,7 @@ use std::{
     str::FromStr,
 };
 
-use image::{Rgba, RgbaImage};
+use image::{Rgba, RgbaImage, imageops};
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -149,6 +149,52 @@ pub fn redact_file(
     Ok(output)
 }
 
+pub fn highlight_file(
+    input: &Path,
+    rect: Rect,
+    output: Option<PathBuf>,
+) -> Result<PathBuf, RedactError> {
+    let mut image = image::open(input)
+        .map_err(|source| RedactError::Open {
+            path: input.to_path_buf(),
+            source,
+        })?
+        .to_rgba8();
+
+    apply_highlight(&mut image, rect)?;
+
+    let output = output.unwrap_or_else(|| sibling_output_path(input, "highlighted"));
+    image.save(&output).map_err(|source| RedactError::Save {
+        path: output.clone(),
+        source,
+    })?;
+
+    Ok(output)
+}
+
+pub fn crop_file(
+    input: &Path,
+    rect: Rect,
+    output: Option<PathBuf>,
+) -> Result<PathBuf, RedactError> {
+    let image = image::open(input)
+        .map_err(|source| RedactError::Open {
+            path: input.to_path_buf(),
+            source,
+        })?
+        .to_rgba8();
+    let rect = rect.checked_for_image(image.width(), image.height())?;
+    let cropped = imageops::crop_imm(&image, rect.x, rect.y, rect.width, rect.height).to_image();
+
+    let output = output.unwrap_or_else(|| sibling_output_path(input, "cropped"));
+    cropped.save(&output).map_err(|source| RedactError::Save {
+        path: output.clone(),
+        source,
+    })?;
+
+    Ok(output)
+}
+
 pub fn apply_redaction(
     image: &mut RgbaImage,
     rect: Rect,
@@ -165,13 +211,40 @@ pub fn apply_redaction(
     Ok(())
 }
 
+pub fn apply_highlight(image: &mut RgbaImage, rect: Rect) -> Result<(), RedactError> {
+    let rect = rect.checked_for_image(image.width(), image.height())?;
+    let color = Rgba([255, 230, 0, 255]);
+
+    for y in rect.y..rect.y + rect.height {
+        for x in rect.x..rect.x + rect.width {
+            let pixel = image.get_pixel_mut(x, y);
+            pixel.0 = [
+                average(pixel.0[0], color.0[0]),
+                average(pixel.0[1], color.0[1]),
+                average(pixel.0[2], color.0[2]),
+                pixel.0[3],
+            ];
+        }
+    }
+
+    Ok(())
+}
+
 fn default_output_path(input: &Path) -> PathBuf {
+    sibling_output_path(input, "redacted")
+}
+
+fn sibling_output_path(input: &Path, suffix: &str) -> PathBuf {
     let parent = input.parent().unwrap_or_else(|| Path::new(""));
     let stem = input
         .file_stem()
         .and_then(|stem| stem.to_str())
-        .unwrap_or("redacted");
-    parent.join(format!("{stem}-redacted.png"))
+        .unwrap_or(suffix);
+    parent.join(format!("{stem}-{suffix}.png"))
+}
+
+fn average(a: u8, b: u8) -> u8 {
+    ((u16::from(a) + u16::from(b)) / 2) as u8
 }
 
 #[cfg(test)]
@@ -293,6 +366,25 @@ mod tests {
     }
 
     #[test]
+    fn highlight_changes_pixels_and_preserves_alpha() {
+        let mut image = RgbaImage::from_pixel(2, 2, Rgba([10, 20, 30, 200]));
+
+        apply_highlight(
+            &mut image,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(image.get_pixel(0, 0), &Rgba([132, 125, 15, 200]));
+        assert_eq!(image.get_pixel(1, 1), &Rgba([10, 20, 30, 200]));
+    }
+
+    #[test]
     fn default_output_path_is_predictable() {
         assert_eq!(
             default_output_path(Path::new("input.png")),
@@ -378,6 +470,33 @@ mod tests {
         let image = image::open(output).unwrap();
         assert_eq!(image.width(), 4);
         assert_eq!(image.height(), 3);
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn crop_file_writes_cropped_copy() {
+        let dir = temp_test_dir("crop");
+        let input = dir.join("input.png");
+        let output = dir.join("cropped.png");
+        write_test_image(&input);
+
+        let actual = crop_file(
+            &input,
+            Rect {
+                x: 1,
+                y: 1,
+                width: 2,
+                height: 1,
+            },
+            Some(output.clone()),
+        )
+        .unwrap();
+
+        let image = image::open(&actual).unwrap();
+        assert_eq!(actual, output);
+        assert_eq!(image.width(), 2);
+        assert_eq!(image.height(), 1);
 
         fs::remove_dir_all(dir).unwrap();
     }

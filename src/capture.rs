@@ -1,7 +1,4 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{fs, path::PathBuf};
 
 use chrono::{DateTime, Local};
 use image::{RgbaImage, imageops};
@@ -37,14 +34,19 @@ pub struct CaptureResult {
     pub image: RgbaImage,
 }
 
-pub fn capture_full(output_dir: &Path) -> Result<CaptureResult, CaptureError> {
-    let monitors = Monitor::all()?;
-    let image = capture_monitors(&monitors)?;
-    save_capture(output_dir, image)
+pub enum CaptureOutput {
+    Directory(PathBuf),
+    File(PathBuf),
 }
 
-pub fn capture_region(
-    output_dir: &Path,
+pub fn capture_full_to(output: CaptureOutput) -> Result<CaptureResult, CaptureError> {
+    let monitors = Monitor::all()?;
+    let image = capture_monitors(&monitors)?;
+    save_capture(output, image)
+}
+
+pub fn capture_region_to(
+    output: CaptureOutput,
     rect: Option<Rect>,
 ) -> Result<CaptureResult, CaptureError> {
     let rect = rect.ok_or(CaptureError::InteractiveRegionUnsupported)?;
@@ -60,7 +62,7 @@ pub fn capture_region(
             let local_x = (rect.x - monitor_x) as u32;
             let local_y = (rect.y - monitor_y) as u32;
             let image = monitor.capture_region(local_x, local_y, rect.width, rect.height)?;
-            return save_capture(output_dir, image);
+            return save_capture(output, image);
         }
     }
 
@@ -89,13 +91,29 @@ fn capture_monitors(monitors: &[Monitor]) -> Result<RgbaImage, CaptureError> {
     Ok(canvas)
 }
 
-fn save_capture(output_dir: &Path, image: RgbaImage) -> Result<CaptureResult, CaptureError> {
-    fs::create_dir_all(output_dir).map_err(|source| CaptureError::CreateOutputDir {
-        path: output_dir.to_path_buf(),
-        source,
-    })?;
+fn save_capture(output: CaptureOutput, image: RgbaImage) -> Result<CaptureResult, CaptureError> {
+    let path = match output {
+        CaptureOutput::Directory(output_dir) => {
+            fs::create_dir_all(&output_dir).map_err(|source| CaptureError::CreateOutputDir {
+                path: output_dir.clone(),
+                source,
+            })?;
+            output_dir.join(screenshot_filename(Local::now()))
+        }
+        CaptureOutput::File(path) => {
+            if let Some(parent) = path
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+            {
+                fs::create_dir_all(parent).map_err(|source| CaptureError::CreateOutputDir {
+                    path: parent.to_path_buf(),
+                    source,
+                })?;
+            }
+            path
+        }
+    };
 
-    let path = output_dir.join(screenshot_filename(Local::now()));
     image.save(&path).map_err(|source| CaptureError::Save {
         path: path.clone(),
         source,
@@ -210,6 +228,20 @@ mod tests {
     }
 
     #[test]
+    fn explicit_capture_output_file_is_used_as_is() {
+        let dir = temp_test_dir("capture-file");
+        let output = dir.join("chosen.png");
+        let image = RgbaImage::from_pixel(2, 2, image::Rgba([1, 2, 3, 255]));
+
+        let result = save_capture(CaptureOutput::File(output.clone()), image).unwrap();
+
+        assert_eq!(result.path, output);
+        assert!(result.path.exists());
+
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn region_must_fit_inside_monitor() {
         let rect = Rect {
             x: 10,
@@ -261,5 +293,15 @@ mod tests {
                 height: 1080
             }
         );
+    }
+
+    fn temp_test_dir(name: &str) -> PathBuf {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("shotlite-capture-{name}-{unique}"));
+        std::fs::create_dir(&path).unwrap();
+        path
     }
 }

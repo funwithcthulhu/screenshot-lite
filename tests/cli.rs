@@ -72,6 +72,68 @@ fn redact_command_rejects_rect_outside_image_bounds() {
 }
 
 #[test]
+fn highlight_command_writes_new_file() {
+    let dir = temp_test_dir("highlight");
+    let input = dir.join("input.png");
+    let output = dir.join("highlight.png");
+    write_test_image(&input);
+    let original = fs::read(&input).unwrap();
+
+    let result = shotlite()
+        .args([
+            "highlight",
+            input.to_str().unwrap(),
+            "--rect",
+            "1,1,2,1",
+            "--output",
+            output.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(fs::read(&input).unwrap(), original);
+    assert!(output.exists());
+
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn crop_command_writes_cropped_file() {
+    let dir = temp_test_dir("crop");
+    let input = dir.join("input.png");
+    let output = dir.join("crop.png");
+    write_test_image(&input);
+
+    let result = shotlite()
+        .args([
+            "crop",
+            input.to_str().unwrap(),
+            "--rect",
+            "1,1,2,1",
+            "--output",
+            output.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let image = image::open(output).unwrap();
+    assert_eq!(image.width(), 2);
+    assert_eq!(image.height(), 1);
+
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn config_path_prints_config_location() {
     let result = shotlite().args(["config", "path"]).output().unwrap();
 

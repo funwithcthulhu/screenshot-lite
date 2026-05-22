@@ -32,6 +32,12 @@ Save one capture to a specific directory:
 shotlite full --output-dir .\shots
 ```
 
+Save one capture to an exact file:
+
+```sh
+shotlite full --output .\shots\screen.png
+```
+
 Capture a rectangle:
 
 ```sh
@@ -46,6 +52,13 @@ Copy a capture to the clipboard too:
 shotlite full --clipboard
 ```
 
+Open or reveal the saved file after capture:
+
+```sh
+shotlite full --open
+shotlite full --reveal
+```
+
 Redact an image by filling a rectangle with black pixels:
 
 ```sh
@@ -54,6 +67,13 @@ shotlite redact input.png --rect 10,20,200,80
 
 By default, redaction writes `input-redacted.png` and leaves the input file unchanged.
 Use `--output` to choose another path.
+
+Highlight or crop an existing image:
+
+```sh
+shotlite highlight input.png --rect 10,20,200,80
+shotlite crop input.png --rect 10,20,200,80
+```
 
 Show or set the output directory:
 
