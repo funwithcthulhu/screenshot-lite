@@ -33,6 +33,7 @@ pub fn run() -> Result<(), TrayError> {
 mod windows_tray {
     use std::{
         mem,
+        path::Path,
         ptr::{null, null_mut},
     };
 
@@ -51,8 +52,8 @@ mod windows_tray {
                 VK_Q,
             },
             Shell::{
-                NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW,
-                Shell_NotifyIconW,
+                NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_TIP, NIIF_ERROR, NIIF_INFO, NIM_ADD,
+                NIM_DELETE, NIM_MODIFY, NOTIFYICONDATAW, Shell_NotifyIconW,
             },
             WindowsAndMessaging::{
                 CS_HREDRAW, CS_VREDRAW, CreateWindowExW, DefWindowProcW, DispatchMessageW,
@@ -127,10 +128,10 @@ mod windows_tray {
             WM_HOTKEY => {
                 match wparam as i32 {
                     HOTKEY_FULL => {
-                        let _ = capture_full();
+                        notify_capture(hwnd, capture_full());
                     }
                     HOTKEY_REGION => {
-                        let _ = capture_region();
+                        notify_capture(hwnd, capture_region());
                     }
                     HOTKEY_QUIT => {
                         unsafe { PostQuitMessage(0) };
@@ -141,7 +142,7 @@ mod windows_tray {
             }
             TRAY_MESSAGE => {
                 if lparam as u32 == 0x0203 {
-                    let _ = capture_full();
+                    notify_capture(hwnd, capture_full());
                 }
                 0
             }
@@ -153,17 +154,18 @@ mod windows_tray {
         }
     }
 
-    fn capture_full() -> Result<(), TrayError> {
+    fn capture_full() -> Result<std::path::PathBuf, TrayError> {
         let config = Config::load()?;
-        capture::capture_full_to(CaptureOutput::Directory(config.output_dir))?;
-        Ok(())
+        let result = capture::capture_full_to(CaptureOutput::Directory(config.output_dir))?;
+        Ok(result.path)
     }
 
-    fn capture_region() -> Result<(), TrayError> {
+    fn capture_region() -> Result<std::path::PathBuf, TrayError> {
         let config = Config::load()?;
         let rect = interactive::select_region()?;
-        capture::capture_region_to(CaptureOutput::Directory(config.output_dir), Some(rect))?;
-        Ok(())
+        let result =
+            capture::capture_region_to(CaptureOutput::Directory(config.output_dir), Some(rect))?;
+        Ok(result.path)
     }
 
     unsafe fn register_hotkeys(hwnd: HWND) -> Result<(), TrayError> {
@@ -205,6 +207,36 @@ mod windows_tray {
             ..Default::default()
         };
         unsafe { Shell_NotifyIconW(NIM_DELETE, &data) };
+    }
+
+    fn notify_capture(hwnd: HWND, result: Result<std::path::PathBuf, TrayError>) {
+        match result {
+            Ok(path) => show_balloon(hwnd, "Screenshot saved", display_path(&path), NIIF_INFO),
+            Err(error) => show_balloon(hwnd, "Screenshot failed", error.to_string(), NIIF_ERROR),
+        }
+    }
+
+    fn show_balloon(hwnd: HWND, title: &str, message: impl AsRef<str>, flags: u32) {
+        let mut data = NOTIFYICONDATAW {
+            cbSize: mem::size_of::<NOTIFYICONDATAW>() as u32,
+            hWnd: hwnd,
+            uID: TRAY_ID,
+            uFlags: NIF_INFO,
+            dwInfoFlags: flags,
+            ..Default::default()
+        };
+        write_wide_array(&mut data.szInfoTitle, title);
+        write_wide_array(&mut data.szInfo, message.as_ref());
+        unsafe {
+            Shell_NotifyIconW(NIM_MODIFY, &data);
+        }
+    }
+
+    fn display_path(path: &Path) -> String {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("screenshot saved")
+            .to_owned()
     }
 
     fn wide(value: &str) -> Vec<u16> {
