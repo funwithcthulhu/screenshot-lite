@@ -16,11 +16,15 @@ pub struct Cli {
 pub enum Command {
     Full {
         #[arg(long)]
+        output_dir: Option<PathBuf>,
+        #[arg(long)]
         clipboard: bool,
     },
     Region {
         #[arg(long)]
         rect: Option<Rect>,
+        #[arg(long)]
+        output_dir: Option<PathBuf>,
         #[arg(long)]
         clipboard: bool,
     },
@@ -42,6 +46,7 @@ pub enum Command {
 
 #[derive(Debug, Subcommand)]
 pub enum ConfigCommand {
+    Path,
     Show,
     Set { key: ConfigKey, value: PathBuf },
 }

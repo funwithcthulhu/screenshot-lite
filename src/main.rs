@@ -17,15 +17,22 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Full { clipboard } => {
-            let config = Config::load()?;
-            let capture = capture::capture_full(&config.output_dir)?;
+        Command::Full {
+            output_dir,
+            clipboard,
+        } => {
+            let output_dir = capture_output_dir(output_dir)?;
+            let capture = capture::capture_full(&output_dir)?;
             maybe_copy(clipboard, &capture.image)?;
             println!("{}", capture.path.display());
         }
-        Command::Region { rect, clipboard } => {
-            let config = Config::load()?;
-            let capture = capture::capture_region(&config.output_dir, rect)?;
+        Command::Region {
+            rect,
+            output_dir,
+            clipboard,
+        } => {
+            let output_dir = capture_output_dir(output_dir)?;
+            let capture = capture::capture_region(&output_dir, rect)?;
             maybe_copy(clipboard, &capture.image)?;
             println!("{}", capture.path.display());
         }
@@ -41,6 +48,11 @@ fn main() -> Result<()> {
             println!("{}", output.display());
         }
         Command::Config { command } => match command {
+            ConfigCommand::Path => {
+                let path = paths::config_file()
+                    .context("could not determine the user config directory")?;
+                println!("{}", path.display());
+            }
             ConfigCommand::Show => {
                 let config = Config::load()?;
                 print!("{}", config.to_toml()?);
@@ -57,6 +69,13 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn capture_output_dir(output_dir: Option<std::path::PathBuf>) -> Result<std::path::PathBuf> {
+    match output_dir {
+        Some(output_dir) => Ok(output_dir),
+        None => Ok(Config::load()?.output_dir),
+    }
 }
 
 fn maybe_copy(copy: bool, image: &image::RgbaImage) -> Result<()> {

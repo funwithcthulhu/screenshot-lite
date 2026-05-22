@@ -130,6 +130,7 @@ fn rect_inside_monitor(
         && rect_bottom <= monitor_bottom
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Bounds {
     x: i32,
     y: i32,
@@ -137,24 +138,52 @@ struct Bounds {
     height: u32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct MonitorGeometry {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
 fn monitor_bounds(monitors: &[Monitor]) -> Result<Bounds, CaptureError> {
+    let geometries = monitors
+        .iter()
+        .map(|monitor| {
+            Ok(MonitorGeometry {
+                x: monitor.x()?,
+                y: monitor.y()?,
+                width: monitor.width()?,
+                height: monitor.height()?,
+            })
+        })
+        .collect::<Result<Vec<_>, xcap::XCapError>>()?;
+
+    bounds_from_geometries(&geometries)
+}
+
+fn bounds_from_geometries(monitors: &[MonitorGeometry]) -> Result<Bounds, CaptureError> {
+    if monitors.is_empty() {
+        return Err(CaptureError::NoMonitors);
+    }
+
     let mut left = i32::MAX;
     let mut top = i32::MAX;
     let mut right = i32::MIN;
     let mut bottom = i32::MIN;
 
     for monitor in monitors {
-        let x = monitor.x()?;
-        let y = monitor.y()?;
-        let monitor_right = x
-            .checked_add_unsigned(monitor.width()?)
+        let monitor_right = monitor
+            .x
+            .checked_add_unsigned(monitor.width)
             .ok_or(CaptureError::NoMonitors)?;
-        let monitor_bottom = y
-            .checked_add_unsigned(monitor.height()?)
+        let monitor_bottom = monitor
+            .y
+            .checked_add_unsigned(monitor.height)
             .ok_or(CaptureError::NoMonitors)?;
 
-        left = left.min(x);
-        top = top.min(y);
+        left = left.min(monitor.x);
+        top = top.min(monitor.y);
         right = right.max(monitor_right);
         bottom = bottom.max(monitor_bottom);
     }
@@ -191,5 +220,46 @@ mod tests {
 
         assert!(rect_inside_monitor(rect, 0, 0, 100, 100));
         assert!(!rect_inside_monitor(rect, 0, 0, 20, 100));
+    }
+
+    #[test]
+    fn region_can_fit_inside_negative_monitor_coordinates() {
+        let rect = Rect {
+            x: -100,
+            y: 20,
+            width: 50,
+            height: 40,
+        };
+
+        assert!(rect_inside_monitor(rect, -200, 0, 200, 100));
+    }
+
+    #[test]
+    fn monitor_bounds_cover_negative_and_positive_coordinates() {
+        let bounds = bounds_from_geometries(&[
+            MonitorGeometry {
+                x: -1280,
+                y: 0,
+                width: 1280,
+                height: 720,
+            },
+            MonitorGeometry {
+                x: 0,
+                y: -100,
+                width: 1920,
+                height: 1080,
+            },
+        ])
+        .unwrap();
+
+        assert_eq!(
+            bounds,
+            Bounds {
+                x: -1280,
+                y: -100,
+                width: 3200,
+                height: 1080
+            }
+        );
     }
 }

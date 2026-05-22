@@ -26,11 +26,19 @@ Capture all detected monitors:
 shotlite full
 ```
 
+Save one capture to a specific directory:
+
+```sh
+shotlite full --output-dir .\shots
+```
+
 Capture a rectangle:
 
 ```sh
 shotlite region --rect 10,20,400,300
 ```
+
+Region capture is coordinate-only for now; interactive selection is intentionally not implemented yet.
 
 Copy a capture to the clipboard too:
 
@@ -50,6 +58,7 @@ Use `--output` to choose another path.
 Show or set the output directory:
 
 ```sh
+shotlite config path
 shotlite config show
 shotlite config set output-dir C:\Users\you\Pictures\Screenshots
 ```
