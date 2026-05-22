@@ -51,6 +51,34 @@ fn redact_command_writes_new_file_and_leaves_input_unchanged() {
 }
 
 #[test]
+fn redact_command_uses_default_output_name() {
+    let dir = temp_test_dir("redact-default-output");
+    let input = dir.join("input.png");
+    let output = dir.join("input-redacted.png");
+    write_test_image(&input);
+    let original = fs::read(&input).unwrap();
+
+    let result = shotlite()
+        .args(["redact", input.to_str().unwrap(), "--rect", "1,1,2,2"])
+        .output()
+        .unwrap();
+
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&result.stdout).trim(),
+        output.display().to_string()
+    );
+    assert!(output.exists());
+    assert_eq!(fs::read(&input).unwrap(), original);
+
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn redact_command_rejects_zero_width_rect() {
     assert_redact_fails_with("1,1,0,2", "rect width and height must be greater than zero");
 }
