@@ -24,6 +24,7 @@ Copy-Item (Join-Path $root "README.md") $packageDir
 Copy-Item (Join-Path $root "LICENSE-MIT") $packageDir
 Copy-Item (Join-Path $root "LICENSE-APACHE") $packageDir
 Copy-Item (Join-Path $PSScriptRoot "install-windows.ps1") $packageDir
+Copy-Item (Join-Path $PSScriptRoot "uninstall-windows.ps1") $packageDir
 
 if ($SignToolPath -and $CertificateSha1) {
     & $SignToolPath sign /sha1 $CertificateSha1 /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 (Join-Path $packageDir "shotlite.exe")

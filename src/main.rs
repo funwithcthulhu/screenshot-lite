@@ -7,6 +7,7 @@ mod file_action;
 mod interactive;
 mod paths;
 mod redact;
+mod startup;
 mod tray;
 
 use anyhow::{Context, Result};

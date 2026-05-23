@@ -90,7 +90,7 @@ Run the Windows tray app:
 shotlite tray
 ```
 
-Right-click the tray icon for capture, folder, config, and quit actions.
+Right-click the tray icon for capture, folder, config, startup, and quit actions.
 
 Tray hotkeys:
 
@@ -114,7 +114,32 @@ shotlite config set output-dir C:\Users\you\Pictures\Screenshots
 
 ## Packaging
 
-Windows packaging scripts are in `scripts/`.
+Build a Windows package:
+
+```text
+powershell -ExecutionPolicy Bypass -File scripts\package-windows.ps1
+```
+
+Install from the unpacked package:
+
+```text
+powershell -ExecutionPolicy Bypass -File install-windows.ps1
+powershell -ExecutionPolicy Bypass -File install-windows.ps1 -StartWithWindows
+```
+
+Skip the Start Menu shortcut:
+
+```text
+powershell -ExecutionPolicy Bypass -File install-windows.ps1 -NoStartMenuShortcut
+```
+
+Uninstall:
+
+```text
+powershell -ExecutionPolicy Bypass -File uninstall-windows.ps1
+```
+
+The uninstall script removes the installed executable, Start Menu shortcut, and startup entry. It does not remove the config file or screenshots.
 
 ## License
 

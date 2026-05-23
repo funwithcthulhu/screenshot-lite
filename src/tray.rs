@@ -42,7 +42,7 @@ mod windows_tray {
     use crate::{
         capture::{self, CaptureOutput},
         config::Config,
-        file_action, interactive, paths,
+        file_action, interactive, paths, startup,
     };
     use windows_sys::Win32::{
         Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM},
@@ -60,10 +60,11 @@ mod windows_tray {
             WindowsAndMessaging::{
                 AppendMenuW, CS_HREDRAW, CS_VREDRAW, CreateIconIndirect, CreatePopupMenu,
                 CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyMenu, DispatchMessageW,
-                GetCursorPos, GetMessageW, HICON, ICONINFO, MF_SEPARATOR, MF_STRING, MSG,
-                PostQuitMessage, RegisterClassW, SetForegroundWindow, TPM_LEFTALIGN, TPM_RETURNCMD,
-                TPM_RIGHTBUTTON, TPM_TOPALIGN, TrackPopupMenu, TranslateMessage, WM_COMMAND,
-                WM_DESTROY, WM_HOTKEY, WM_LBUTTONDBLCLK, WM_RBUTTONUP, WM_USER, WNDCLASSW,
+                GetCursorPos, GetMessageW, HICON, ICONINFO, MF_CHECKED, MF_SEPARATOR, MF_STRING,
+                MF_UNCHECKED, MSG, PostQuitMessage, RegisterClassW, SetForegroundWindow,
+                TPM_LEFTALIGN, TPM_RETURNCMD, TPM_RIGHTBUTTON, TPM_TOPALIGN, TrackPopupMenu,
+                TranslateMessage, WM_COMMAND, WM_DESTROY, WM_HOTKEY, WM_LBUTTONDBLCLK,
+                WM_RBUTTONUP, WM_USER, WNDCLASSW,
             },
         },
     };
@@ -78,7 +79,8 @@ mod windows_tray {
     const MENU_REGION: usize = 11;
     const MENU_OPEN_FOLDER: usize = 12;
     const MENU_REVEAL_CONFIG: usize = 13;
-    const MENU_QUIT: usize = 14;
+    const MENU_STARTUP: usize = 14;
+    const MENU_QUIT: usize = 15;
     static TRAY_ICON: AtomicIsize = AtomicIsize::new(0);
 
     pub fn run() -> Result<(), TrayError> {
@@ -185,6 +187,7 @@ mod windows_tray {
             MENU_REGION => notify_capture(hwnd, capture_region()),
             MENU_OPEN_FOLDER => notify_action(hwnd, open_output_folder()),
             MENU_REVEAL_CONFIG => notify_action(hwnd, reveal_config_file()),
+            MENU_STARTUP => notify_action(hwnd, toggle_startup()),
             MENU_QUIT => unsafe { PostQuitMessage(0) },
             _ => {}
         }
@@ -277,6 +280,22 @@ mod windows_tray {
         unsafe {
             AppendMenuW(menu, MF_SEPARATOR, 0, null());
         }
+        let startup = wide("Start with Windows");
+        let startup_state = match startup::is_enabled() {
+            Ok(true) => MF_CHECKED,
+            Ok(false) | Err(_) => MF_UNCHECKED,
+        };
+        unsafe {
+            AppendMenuW(
+                menu,
+                MF_STRING | startup_state,
+                MENU_STARTUP,
+                startup.as_ptr(),
+            );
+        }
+        unsafe {
+            AppendMenuW(menu, MF_SEPARATOR, 0, null());
+        }
         let quit = wide("Quit");
         unsafe {
             AppendMenuW(menu, MF_STRING, MENU_QUIT, quit.as_ptr());
@@ -349,6 +368,11 @@ mod windows_tray {
         let config_file =
             paths::config_file().ok_or_else(|| "could not determine config path".to_owned())?;
         file_action::reveal(&config_file).map_err(|error| error.to_string())
+    }
+
+    fn toggle_startup() -> Result<(), String> {
+        let enabled = startup::is_enabled().map_err(|error| error.to_string())?;
+        startup::set_enabled(!enabled).map_err(|error| error.to_string())
     }
 
     unsafe fn create_eye_icon() -> HICON {
