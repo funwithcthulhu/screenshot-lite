@@ -90,7 +90,7 @@ Run the Windows tray app:
 shotlite tray
 ```
 
-Right-click the tray icon for capture, folder, config, startup, and quit actions.
+Right-click the tray icon for capture, copy/open last screenshot, folder, config, startup, and quit actions.
 
 Tray hotkeys:
 

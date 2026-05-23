@@ -44,6 +44,7 @@ mod windows_tray {
     use super::TrayError;
     use crate::{
         capture::{self, CaptureOutput},
+        clipboard,
         config::Config,
         file_action, interactive, paths, startup,
     };
@@ -63,8 +64,8 @@ mod windows_tray {
             WindowsAndMessaging::{
                 AppendMenuW, CS_HREDRAW, CS_VREDRAW, CreateIconIndirect, CreatePopupMenu,
                 CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyMenu, DispatchMessageW,
-                GetCursorPos, GetMessageW, HICON, ICONINFO, MF_CHECKED, MF_SEPARATOR, MF_STRING,
-                MF_UNCHECKED, MSG, PostQuitMessage, RegisterClassW, SetForegroundWindow,
+                GetCursorPos, GetMessageW, HICON, ICONINFO, MF_CHECKED, MF_GRAYED, MF_SEPARATOR,
+                MF_STRING, MF_UNCHECKED, MSG, PostQuitMessage, RegisterClassW, SetForegroundWindow,
                 TPM_LEFTALIGN, TPM_RETURNCMD, TPM_RIGHTBUTTON, TPM_TOPALIGN, TrackPopupMenu,
                 TranslateMessage, WM_COMMAND, WM_DESTROY, WM_HOTKEY, WM_LBUTTONDBLCLK,
                 WM_RBUTTONUP, WM_USER, WNDCLASSW,
@@ -81,10 +82,11 @@ mod windows_tray {
     const MENU_FULL: usize = 10;
     const MENU_REGION: usize = 11;
     const MENU_OPEN_LAST: usize = 12;
-    const MENU_OPEN_FOLDER: usize = 13;
-    const MENU_REVEAL_CONFIG: usize = 14;
-    const MENU_STARTUP: usize = 15;
-    const MENU_QUIT: usize = 16;
+    const MENU_COPY_LAST: usize = 13;
+    const MENU_OPEN_FOLDER: usize = 14;
+    const MENU_REVEAL_CONFIG: usize = 15;
+    const MENU_STARTUP: usize = 16;
+    const MENU_QUIT: usize = 17;
     static TRAY_ICON: AtomicIsize = AtomicIsize::new(0);
     static LAST_CAPTURE: Mutex<Option<PathBuf>> = Mutex::new(None);
 
@@ -191,6 +193,7 @@ mod windows_tray {
             MENU_FULL => notify_capture(hwnd, capture_full()),
             MENU_REGION => notify_capture(hwnd, capture_region()),
             MENU_OPEN_LAST => notify_action(hwnd, open_last_capture()),
+            MENU_COPY_LAST => notify_action(hwnd, copy_last_capture()),
             MENU_OPEN_FOLDER => notify_action(hwnd, open_output_folder()),
             MENU_REVEAL_CONFIG => notify_action(hwnd, reveal_config_file()),
             MENU_STARTUP => notify_action(hwnd, toggle_startup()),
@@ -271,17 +274,27 @@ mod windows_tray {
             return None;
         }
 
+        let has_last_capture = LAST_CAPTURE.lock().unwrap().is_some();
         let items = [
-            (MENU_FULL, "Full screenshot"),
-            (MENU_REGION, "Region screenshot"),
-            (MENU_OPEN_LAST, "Open last screenshot"),
-            (MENU_OPEN_FOLDER, "Open screenshots folder"),
-            (MENU_REVEAL_CONFIG, "Show config file"),
+            (MENU_FULL, "Full screenshot", MF_STRING),
+            (MENU_REGION, "Region screenshot", MF_STRING),
+            (
+                MENU_OPEN_LAST,
+                "Open last screenshot",
+                enabled_menu_flag(has_last_capture),
+            ),
+            (
+                MENU_COPY_LAST,
+                "Copy last screenshot",
+                enabled_menu_flag(has_last_capture),
+            ),
+            (MENU_OPEN_FOLDER, "Open screenshots folder", MF_STRING),
+            (MENU_REVEAL_CONFIG, "Show config file", MF_STRING),
         ];
-        for (id, label) in items {
+        for (id, label, flags) in items {
             let label = wide(label);
             unsafe {
-                AppendMenuW(menu, MF_STRING, id, label.as_ptr());
+                AppendMenuW(menu, flags, id, label.as_ptr());
             }
         }
         unsafe {
@@ -340,9 +353,11 @@ mod windows_tray {
         }
     }
 
-    fn notify_action(hwnd: HWND, result: Result<(), String>) {
-        if let Err(error) = result {
-            show_balloon(hwnd, "shotlite", error, NIIF_ERROR);
+    fn notify_action(hwnd: HWND, result: Result<Option<String>, String>) {
+        match result {
+            Ok(Some(message)) => show_balloon(hwnd, "shotlite", message, NIIF_INFO),
+            Ok(None) => {}
+            Err(error) => show_balloon(hwnd, "shotlite", error, NIIF_ERROR),
         }
     }
 
@@ -369,29 +384,52 @@ mod windows_tray {
             .to_owned()
     }
 
-    fn open_output_folder() -> Result<(), String> {
+    fn open_output_folder() -> Result<Option<String>, String> {
         let config = Config::load().map_err(|error| error.to_string())?;
-        file_action::open(&config.output_dir).map_err(|error| error.to_string())
+        file_action::open(&config.output_dir).map_err(|error| error.to_string())?;
+        Ok(None)
     }
 
-    fn open_last_capture() -> Result<(), String> {
-        let path = LAST_CAPTURE
+    fn open_last_capture() -> Result<Option<String>, String> {
+        let path = last_capture_path()?;
+        file_action::open(&path).map_err(|error| error.to_string())?;
+        Ok(None)
+    }
+
+    fn copy_last_capture() -> Result<Option<String>, String> {
+        let path = last_capture_path()?;
+        clipboard::copy_image_file(&path).map_err(|error| error.to_string())?;
+        Ok(Some("Copied last screenshot".to_owned()))
+    }
+
+    fn reveal_config_file() -> Result<Option<String>, String> {
+        let config_file =
+            paths::config_file().ok_or_else(|| "could not determine config path".to_owned())?;
+        file_action::reveal(&config_file).map_err(|error| error.to_string())?;
+        Ok(None)
+    }
+
+    fn toggle_startup() -> Result<Option<String>, String> {
+        let enabled = startup::is_enabled().map_err(|error| error.to_string())?;
+        startup::set_enabled(!enabled).map_err(|error| error.to_string())?;
+        let state = if enabled { "disabled" } else { "enabled" };
+        Ok(Some(format!("Start with Windows {state}")))
+    }
+
+    fn last_capture_path() -> Result<PathBuf, String> {
+        LAST_CAPTURE
             .lock()
             .unwrap()
             .clone()
-            .ok_or_else(|| "no screenshot has been captured yet".to_owned())?;
-        file_action::open(&path).map_err(|error| error.to_string())
+            .ok_or_else(|| "no screenshot has been captured yet".to_owned())
     }
 
-    fn reveal_config_file() -> Result<(), String> {
-        let config_file =
-            paths::config_file().ok_or_else(|| "could not determine config path".to_owned())?;
-        file_action::reveal(&config_file).map_err(|error| error.to_string())
-    }
-
-    fn toggle_startup() -> Result<(), String> {
-        let enabled = startup::is_enabled().map_err(|error| error.to_string())?;
-        startup::set_enabled(!enabled).map_err(|error| error.to_string())
+    fn enabled_menu_flag(enabled: bool) -> u32 {
+        if enabled {
+            MF_STRING
+        } else {
+            MF_STRING | MF_GRAYED
+        }
     }
 
     unsafe fn create_eye_icon() -> HICON {

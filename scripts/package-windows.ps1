@@ -21,6 +21,7 @@ New-Item -ItemType Directory -Force $packageDir | Out-Null
 
 Copy-Item $exe $packageDir
 Copy-Item (Join-Path $root "README.md") $packageDir
+Copy-Item (Join-Path $root "CHANGELOG.md") $packageDir
 Copy-Item (Join-Path $root "LICENSE-MIT") $packageDir
 Copy-Item (Join-Path $root "LICENSE-APACHE") $packageDir
 Copy-Item (Join-Path $PSScriptRoot "install-windows.ps1") $packageDir

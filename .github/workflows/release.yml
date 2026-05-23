@@ -23,6 +23,7 @@ jobs:
         run: |
           $packageVersion = $env:GITHUB_REF_NAME -replace '^v', ''
           .\scripts\package-windows.ps1 -Version $packageVersion
+          .\scripts\test-package-windows.ps1 -PackageDir "target\dist\shotlite-$($env:GITHUB_REF_NAME)-windows-x86_64"
       - name: Publish release
         shell: pwsh
         env:
@@ -36,4 +37,9 @@ jobs:
           Interactive region selection and tray mode are currently Windows-only.
           Clipboard and capture support depend on the local desktop/session.
           "@
-          gh release create $version $zip --title "shotlite $version" --notes $notes --verify-tag
+          if (gh release view $version *> $null) {
+            gh release edit $version --title "shotlite $version" --notes $notes
+            gh release upload $version $zip --clobber
+          } else {
+            gh release create $version $zip --title "shotlite $version" --notes $notes --verify-tag
+          }
