@@ -75,6 +75,7 @@ pub enum Command {
 pub enum ConfigCommand {
     Path,
     Show,
+    Open,
     Set { key: ConfigKey, value: PathBuf },
 }
 
@@ -130,6 +131,18 @@ mod tests {
                 assert!(!open);
                 assert!(reveal);
             }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn config_open_parses() {
+        let cli = Cli::try_parse_from(["shotlite", "config", "open"]).unwrap();
+
+        match cli.command {
+            Command::Config {
+                command: ConfigCommand::Open,
+            } => {}
             other => panic!("unexpected command: {other:?}"),
         }
     }

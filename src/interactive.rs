@@ -46,10 +46,10 @@ mod windows_overlay {
                 CS_HREDRAW, CS_VREDRAW, CreateWindowExW, DefWindowProcW, DestroyWindow,
                 DispatchMessageW, GetMessageW, GetSystemMetrics, IDC_CROSS, LWA_ALPHA, LoadCursorW,
                 MSG, PostQuitMessage, RegisterClassW, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
-                SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_SHOW, SetLayeredWindowAttributes,
-                ShowWindow, TranslateMessage, WM_DESTROY, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP,
-                WM_MOUSEMOVE, WM_PAINT, WM_RBUTTONDOWN, WNDCLASSW, WS_EX_LAYERED, WS_EX_TOOLWINDOW,
-                WS_EX_TOPMOST, WS_POPUP,
+                SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_SHOW, SetForegroundWindow,
+                SetLayeredWindowAttributes, ShowWindow, TranslateMessage, WM_DESTROY, WM_KEYDOWN,
+                WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_RBUTTONDOWN, WNDCLASSW,
+                WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
             },
         },
     };
@@ -114,6 +114,7 @@ mod windows_overlay {
 
             SetLayeredWindowAttributes(hwnd, 0, 70, LWA_ALPHA);
             ShowWindow(hwnd, SW_SHOW);
+            SetForegroundWindow(hwnd);
 
             let mut msg = MSG::default();
             while GetMessageW(&mut msg, null_mut(), 0, 0) > 0 {
@@ -196,9 +197,17 @@ mod windows_overlay {
                     let top = start.1.min(current.1);
                     let right = start.0.max(current.0);
                     let bottom = start.1.max(current.1);
-                    let pen = unsafe { CreatePen(PS_SOLID, 3, rgb(255, 220, 0)) };
-                    let old_pen = unsafe { SelectObject(hdc, pen) };
+                    let shadow_pen = unsafe { CreatePen(PS_SOLID, 5, rgb(0, 0, 0)) };
+                    let old_pen = unsafe { SelectObject(hdc, shadow_pen) };
                     let old_brush = unsafe { SelectObject(hdc, GetStockObject(NULL_BRUSH)) };
+                    unsafe {
+                        Rectangle(hdc, left, top, right, bottom);
+                        SelectObject(hdc, old_pen);
+                        DeleteObject(shadow_pen);
+                    }
+
+                    let pen = unsafe { CreatePen(PS_SOLID, 2, rgb(255, 220, 0)) };
+                    let old_pen = unsafe { SelectObject(hdc, pen) };
                     unsafe {
                         Rectangle(hdc, left, top, right, bottom);
                         SelectObject(hdc, old_brush);

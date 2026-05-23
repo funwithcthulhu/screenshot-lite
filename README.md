@@ -102,6 +102,7 @@ Show or set the output directory:
 
 ```text
 shotlite config path
+shotlite config open
 shotlite config show
 shotlite config set output-dir C:\Users\you\Pictures\Screenshots
 ```
@@ -111,8 +112,11 @@ shotlite config set output-dir C:\Users\you\Pictures\Screenshots
 - Interactive region selection and tray mode are currently Windows-only.
 - Clipboard support depends on the local platform clipboard.
 - Capture support depends on `xcap` support for the current desktop/session.
+- Linux and macOS support is currently CLI-first; tray and global hotkeys are not implemented there.
 
 ## Packaging
+
+Download the Windows zip from the GitHub release page, unzip it, then run the installer from the unpacked directory.
 
 Build a Windows package:
 
@@ -140,6 +144,14 @@ powershell -ExecutionPolicy Bypass -File uninstall-windows.ps1
 ```
 
 The uninstall script removes the installed executable, Start Menu shortcut, and startup entry. It does not remove the config file or screenshots.
+
+By default, screenshots are written to the configured output directory. The config file path can be printed with:
+
+```text
+shotlite config path
+```
+
+On Windows, the default config path is under `%APPDATA%\shotlite\config.toml`.
 
 ## License
 

@@ -86,6 +86,12 @@ fn main() -> Result<()> {
                 let config = Config::load()?;
                 print!("{}", config.to_toml()?);
             }
+            ConfigCommand::Open => {
+                let config = Config::load()?;
+                let path = config.save()?;
+                file_action::open(&path)?;
+                println!("{}", path.display());
+            }
             ConfigCommand::Set { key, value } => {
                 let mut config = Config::load()?;
                 match key {

@@ -33,9 +33,12 @@ pub fn run() -> Result<(), TrayError> {
 mod windows_tray {
     use std::{
         mem,
-        path::Path,
+        path::{Path, PathBuf},
         ptr::{null, null_mut},
-        sync::atomic::{AtomicIsize, Ordering},
+        sync::{
+            Mutex,
+            atomic::{AtomicIsize, Ordering},
+        },
     };
 
     use super::TrayError;
@@ -77,11 +80,13 @@ mod windows_tray {
     const TRAY_MESSAGE: u32 = WM_USER + 1;
     const MENU_FULL: usize = 10;
     const MENU_REGION: usize = 11;
-    const MENU_OPEN_FOLDER: usize = 12;
-    const MENU_REVEAL_CONFIG: usize = 13;
-    const MENU_STARTUP: usize = 14;
-    const MENU_QUIT: usize = 15;
+    const MENU_OPEN_LAST: usize = 12;
+    const MENU_OPEN_FOLDER: usize = 13;
+    const MENU_REVEAL_CONFIG: usize = 14;
+    const MENU_STARTUP: usize = 15;
+    const MENU_QUIT: usize = 16;
     static TRAY_ICON: AtomicIsize = AtomicIsize::new(0);
+    static LAST_CAPTURE: Mutex<Option<PathBuf>> = Mutex::new(None);
 
     pub fn run() -> Result<(), TrayError> {
         unsafe {
@@ -185,6 +190,7 @@ mod windows_tray {
         match command {
             MENU_FULL => notify_capture(hwnd, capture_full()),
             MENU_REGION => notify_capture(hwnd, capture_region()),
+            MENU_OPEN_LAST => notify_action(hwnd, open_last_capture()),
             MENU_OPEN_FOLDER => notify_action(hwnd, open_output_folder()),
             MENU_REVEAL_CONFIG => notify_action(hwnd, reveal_config_file()),
             MENU_STARTUP => notify_action(hwnd, toggle_startup()),
@@ -268,6 +274,7 @@ mod windows_tray {
         let items = [
             (MENU_FULL, "Full screenshot"),
             (MENU_REGION, "Region screenshot"),
+            (MENU_OPEN_LAST, "Open last screenshot"),
             (MENU_OPEN_FOLDER, "Open screenshots folder"),
             (MENU_REVEAL_CONFIG, "Show config file"),
         ];
@@ -325,7 +332,10 @@ mod windows_tray {
 
     fn notify_capture(hwnd: HWND, result: Result<std::path::PathBuf, TrayError>) {
         match result {
-            Ok(path) => show_balloon(hwnd, "Screenshot saved", display_path(&path), NIIF_INFO),
+            Ok(path) => {
+                *LAST_CAPTURE.lock().unwrap() = Some(path.clone());
+                show_balloon(hwnd, "Screenshot saved", display_path(&path), NIIF_INFO);
+            }
             Err(error) => show_balloon(hwnd, "Screenshot failed", error.to_string(), NIIF_ERROR),
         }
     }
@@ -362,6 +372,15 @@ mod windows_tray {
     fn open_output_folder() -> Result<(), String> {
         let config = Config::load().map_err(|error| error.to_string())?;
         file_action::open(&config.output_dir).map_err(|error| error.to_string())
+    }
+
+    fn open_last_capture() -> Result<(), String> {
+        let path = LAST_CAPTURE
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or_else(|| "no screenshot has been captured yet".to_owned())?;
+        file_action::open(&path).map_err(|error| error.to_string())
     }
 
     fn reveal_config_file() -> Result<(), String> {
