@@ -35,6 +35,7 @@ mod windows_tray {
         mem,
         path::Path,
         ptr::{null, null_mut},
+        sync::atomic::{AtomicIsize, Ordering},
     };
 
     use super::TrayError;
@@ -45,6 +46,7 @@ mod windows_tray {
     };
     use windows_sys::Win32::{
         Foundation::{HWND, LPARAM, LRESULT, WPARAM},
+        Graphics::Gdi::{CreateBitmap, DeleteObject},
         System::LibraryLoader::GetModuleHandleW,
         UI::{
             Input::KeyboardAndMouse::{
@@ -56,18 +58,20 @@ mod windows_tray {
                 NIM_DELETE, NIM_MODIFY, NOTIFYICONDATAW, Shell_NotifyIconW,
             },
             WindowsAndMessaging::{
-                CS_HREDRAW, CS_VREDRAW, CreateWindowExW, DefWindowProcW, DispatchMessageW,
-                GetMessageW, IDI_APPLICATION, LoadIconW, MSG, PostQuitMessage, RegisterClassW,
-                TranslateMessage, WM_DESTROY, WM_HOTKEY, WM_USER, WNDCLASSW,
+                CS_HREDRAW, CS_VREDRAW, CreateIconIndirect, CreateWindowExW, DefWindowProcW,
+                DestroyIcon, DispatchMessageW, GetMessageW, HICON, ICONINFO, MSG, PostQuitMessage,
+                RegisterClassW, TranslateMessage, WM_DESTROY, WM_HOTKEY, WM_USER, WNDCLASSW,
             },
         },
     };
 
+    const ICON_SIZE: usize = 32;
     const HOTKEY_FULL: i32 = 1;
     const HOTKEY_REGION: i32 = 2;
     const HOTKEY_QUIT: i32 = 3;
     const TRAY_ID: u32 = 1;
     const TRAY_MESSAGE: u32 = WM_USER + 1;
+    static TRAY_ICON: AtomicIsize = AtomicIsize::new(0);
 
     pub fn run() -> Result<(), TrayError> {
         unsafe {
@@ -180,13 +184,18 @@ mod windows_tray {
     }
 
     unsafe fn add_tray_icon(hwnd: HWND) -> Result<(), TrayError> {
+        let icon = unsafe { create_eye_icon() };
+        if icon.is_null() {
+            return Err(TrayError::Window);
+        }
+
         let mut data = NOTIFYICONDATAW {
             cbSize: mem::size_of::<NOTIFYICONDATAW>() as u32,
             hWnd: hwnd,
             uID: TRAY_ID,
             uFlags: NIF_MESSAGE | NIF_ICON | NIF_TIP,
             uCallbackMessage: TRAY_MESSAGE,
-            hIcon: unsafe { LoadIconW(null_mut(), IDI_APPLICATION) },
+            hIcon: icon,
             ..Default::default()
         };
         write_wide_array(
@@ -194,8 +203,10 @@ mod windows_tray {
             "shotlite: Ctrl+Shift+1 full, Ctrl+Shift+2 region, Ctrl+Shift+Q quit",
         );
         if unsafe { Shell_NotifyIconW(NIM_ADD, &data) } == 0 {
+            unsafe { DestroyIcon(icon) };
             return Err(TrayError::Window);
         }
+        TRAY_ICON.store(icon as isize, Ordering::Relaxed);
         Ok(())
     }
 
@@ -207,6 +218,10 @@ mod windows_tray {
             ..Default::default()
         };
         unsafe { Shell_NotifyIconW(NIM_DELETE, &data) };
+        let icon = TRAY_ICON.swap(0, Ordering::Relaxed) as HICON;
+        if !icon.is_null() {
+            unsafe { DestroyIcon(icon) };
+        }
     }
 
     fn notify_capture(hwnd: HWND, result: Result<std::path::PathBuf, TrayError>) {
@@ -237,6 +252,100 @@ mod windows_tray {
             .and_then(|name| name.to_str())
             .unwrap_or("screenshot saved")
             .to_owned()
+    }
+
+    unsafe fn create_eye_icon() -> HICON {
+        let (pixels, mask) = eye_icon_bitmaps();
+        let color = unsafe {
+            CreateBitmap(
+                ICON_SIZE as i32,
+                ICON_SIZE as i32,
+                1,
+                32,
+                pixels.as_ptr().cast(),
+            )
+        };
+        let alpha_mask = unsafe {
+            CreateBitmap(
+                ICON_SIZE as i32,
+                ICON_SIZE as i32,
+                1,
+                1,
+                mask.as_ptr().cast(),
+            )
+        };
+        if color.is_null() || alpha_mask.is_null() {
+            if !color.is_null() {
+                unsafe { DeleteObject(color) };
+            }
+            if !alpha_mask.is_null() {
+                unsafe { DeleteObject(alpha_mask) };
+            }
+            return null_mut();
+        }
+
+        let info = ICONINFO {
+            fIcon: 1,
+            hbmColor: color,
+            hbmMask: alpha_mask,
+            ..Default::default()
+        };
+        let icon = unsafe { CreateIconIndirect(&info) };
+        unsafe {
+            DeleteObject(color);
+            DeleteObject(alpha_mask);
+        }
+        icon
+    }
+
+    fn eye_icon_bitmaps() -> (Vec<u32>, Vec<u8>) {
+        let mut pixels = vec![0; ICON_SIZE * ICON_SIZE];
+        let mut mask = vec![0xff; ICON_SIZE * ICON_SIZE / 8];
+
+        for y in 0..ICON_SIZE {
+            for x in 0..ICON_SIZE {
+                let dx = (x as f32 - 15.5) / 13.5;
+                let dy = (y as f32 - 15.5) / 7.0;
+                let eye = dx * dx + dy * dy;
+                if eye > 1.0 {
+                    continue;
+                }
+
+                clear_mask_bit(&mut mask, x, y);
+                let iris_dx = x as f32 - 15.5;
+                let iris_dy = y as f32 - 15.5;
+                let iris = iris_dx * iris_dx + iris_dy * iris_dy;
+                let color = if eye > 0.78 {
+                    bgra(42, 47, 55)
+                } else if iris <= 5.2 * 5.2 {
+                    bgra(45, 134, 166)
+                } else {
+                    bgra(250, 250, 244)
+                };
+                pixels[y * ICON_SIZE + x] = color;
+
+                if iris <= 2.5 * 2.5 {
+                    pixels[y * ICON_SIZE + x] = bgra(16, 19, 24);
+                }
+                let highlight_dx = x as f32 - 13.0;
+                let highlight_dy = y as f32 - 13.0;
+                if highlight_dx * highlight_dx + highlight_dy * highlight_dy <= 1.8 * 1.8 {
+                    pixels[y * ICON_SIZE + x] = bgra(255, 255, 255);
+                }
+            }
+        }
+
+        (pixels, mask)
+    }
+
+    fn clear_mask_bit(mask: &mut [u8], x: usize, y: usize) {
+        let byte = y * (ICON_SIZE / 8) + (x / 8);
+        let bit = 7 - (x % 8);
+        mask[byte] &= !(1 << bit);
+    }
+
+    fn bgra(red: u8, green: u8, blue: u8) -> u32 {
+        u32::from(blue) | (u32::from(green) << 8) | (u32::from(red) << 16)
     }
 
     fn wide(value: &str) -> Vec<u16> {
