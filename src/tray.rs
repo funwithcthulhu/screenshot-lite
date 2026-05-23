@@ -42,10 +42,10 @@ mod windows_tray {
     use crate::{
         capture::{self, CaptureOutput},
         config::Config,
-        interactive,
+        file_action, interactive, paths,
     };
     use windows_sys::Win32::{
-        Foundation::{HWND, LPARAM, LRESULT, WPARAM},
+        Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM},
         Graphics::Gdi::{CreateBitmap, DeleteObject},
         System::LibraryLoader::GetModuleHandleW,
         UI::{
@@ -58,9 +58,12 @@ mod windows_tray {
                 NIM_DELETE, NIM_MODIFY, NOTIFYICONDATAW, Shell_NotifyIconW,
             },
             WindowsAndMessaging::{
-                CS_HREDRAW, CS_VREDRAW, CreateIconIndirect, CreateWindowExW, DefWindowProcW,
-                DestroyIcon, DispatchMessageW, GetMessageW, HICON, ICONINFO, MSG, PostQuitMessage,
-                RegisterClassW, TranslateMessage, WM_DESTROY, WM_HOTKEY, WM_USER, WNDCLASSW,
+                AppendMenuW, CS_HREDRAW, CS_VREDRAW, CreateIconIndirect, CreatePopupMenu,
+                CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyMenu, DispatchMessageW,
+                GetCursorPos, GetMessageW, HICON, ICONINFO, MF_SEPARATOR, MF_STRING, MSG,
+                PostQuitMessage, RegisterClassW, SetForegroundWindow, TPM_LEFTALIGN, TPM_RETURNCMD,
+                TPM_RIGHTBUTTON, TPM_TOPALIGN, TrackPopupMenu, TranslateMessage, WM_COMMAND,
+                WM_DESTROY, WM_HOTKEY, WM_LBUTTONDBLCLK, WM_RBUTTONUP, WM_USER, WNDCLASSW,
             },
         },
     };
@@ -71,6 +74,11 @@ mod windows_tray {
     const HOTKEY_QUIT: i32 = 3;
     const TRAY_ID: u32 = 1;
     const TRAY_MESSAGE: u32 = WM_USER + 1;
+    const MENU_FULL: usize = 10;
+    const MENU_REGION: usize = 11;
+    const MENU_OPEN_FOLDER: usize = 12;
+    const MENU_REVEAL_CONFIG: usize = 13;
+    const MENU_QUIT: usize = 14;
     static TRAY_ICON: AtomicIsize = AtomicIsize::new(0);
 
     pub fn run() -> Result<(), TrayError> {
@@ -145,8 +153,21 @@ mod windows_tray {
                 0
             }
             TRAY_MESSAGE => {
-                if lparam as u32 == 0x0203 {
-                    notify_capture(hwnd, capture_full());
+                match lparam as u32 {
+                    WM_LBUTTONDBLCLK => notify_capture(hwnd, capture_full()),
+                    WM_RBUTTONUP => {
+                        if let Some(command) = unsafe { show_tray_menu(hwnd) } {
+                            run_menu_command(hwnd, command);
+                        }
+                    }
+                    _ => {}
+                }
+                0
+            }
+            WM_COMMAND => {
+                let command = wparam & 0xffff;
+                if command != 0 {
+                    run_menu_command(hwnd, command);
                 }
                 0
             }
@@ -155,6 +176,17 @@ mod windows_tray {
                 0
             }
             _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+        }
+    }
+
+    fn run_menu_command(hwnd: HWND, command: usize) {
+        match command {
+            MENU_FULL => notify_capture(hwnd, capture_full()),
+            MENU_REGION => notify_capture(hwnd, capture_region()),
+            MENU_OPEN_FOLDER => notify_action(hwnd, open_output_folder()),
+            MENU_REVEAL_CONFIG => notify_action(hwnd, reveal_config_file()),
+            MENU_QUIT => unsafe { PostQuitMessage(0) },
+            _ => {}
         }
     }
 
@@ -224,10 +256,64 @@ mod windows_tray {
         }
     }
 
+    unsafe fn show_tray_menu(hwnd: HWND) -> Option<usize> {
+        let menu = unsafe { CreatePopupMenu() };
+        if menu.is_null() {
+            return None;
+        }
+
+        let items = [
+            (MENU_FULL, "Full screenshot"),
+            (MENU_REGION, "Region screenshot"),
+            (MENU_OPEN_FOLDER, "Open screenshots folder"),
+            (MENU_REVEAL_CONFIG, "Show config file"),
+        ];
+        for (id, label) in items {
+            let label = wide(label);
+            unsafe {
+                AppendMenuW(menu, MF_STRING, id, label.as_ptr());
+            }
+        }
+        unsafe {
+            AppendMenuW(menu, MF_SEPARATOR, 0, null());
+        }
+        let quit = wide("Quit");
+        unsafe {
+            AppendMenuW(menu, MF_STRING, MENU_QUIT, quit.as_ptr());
+        }
+
+        let mut point = POINT::default();
+        let command = if unsafe { GetCursorPos(&mut point) } != 0 {
+            unsafe { SetForegroundWindow(hwnd) };
+            unsafe {
+                TrackPopupMenu(
+                    menu,
+                    TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RIGHTBUTTON | TPM_RETURNCMD,
+                    point.x,
+                    point.y,
+                    0,
+                    hwnd,
+                    null(),
+                )
+            }
+        } else {
+            0
+        };
+        unsafe { DestroyMenu(menu) };
+
+        (command > 0).then_some(command as usize)
+    }
+
     fn notify_capture(hwnd: HWND, result: Result<std::path::PathBuf, TrayError>) {
         match result {
             Ok(path) => show_balloon(hwnd, "Screenshot saved", display_path(&path), NIIF_INFO),
             Err(error) => show_balloon(hwnd, "Screenshot failed", error.to_string(), NIIF_ERROR),
+        }
+    }
+
+    fn notify_action(hwnd: HWND, result: Result<(), String>) {
+        if let Err(error) = result {
+            show_balloon(hwnd, "shotlite", error, NIIF_ERROR);
         }
     }
 
@@ -252,6 +338,17 @@ mod windows_tray {
             .and_then(|name| name.to_str())
             .unwrap_or("screenshot saved")
             .to_owned()
+    }
+
+    fn open_output_folder() -> Result<(), String> {
+        let config = Config::load().map_err(|error| error.to_string())?;
+        file_action::open(&config.output_dir).map_err(|error| error.to_string())
+    }
+
+    fn reveal_config_file() -> Result<(), String> {
+        let config_file =
+            paths::config_file().ok_or_else(|| "could not determine config path".to_owned())?;
+        file_action::reveal(&config_file).map_err(|error| error.to_string())
     }
 
     unsafe fn create_eye_icon() -> HICON {

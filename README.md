@@ -90,6 +90,8 @@ Run the Windows tray app:
 shotlite tray
 ```
 
+Right-click the tray icon for capture, folder, config, and quit actions.
+
 Tray hotkeys:
 
 - `Ctrl+Shift+1`: full-screen capture
