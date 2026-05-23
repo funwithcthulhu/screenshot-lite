@@ -113,12 +113,8 @@ fn capture_output(
 }
 
 fn after_capture(path: &std::path::Path, open: bool, reveal: bool) -> Result<()> {
-    if reveal {
-        file_action::reveal(path)?;
-    }
-    if open {
-        file_action::open(path)?;
-    }
+    let actions = file_action::post_capture_actions(open, reveal);
+    file_action::run_post_capture_actions(path, &actions)?;
     Ok(())
 }
 

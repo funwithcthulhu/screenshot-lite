@@ -82,3 +82,55 @@ pub enum ConfigCommand {
 pub enum ConfigKey {
     OutputDir,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn full_open_keeps_explicit_output_file() {
+        let cli = Cli::try_parse_from([
+            "shotlite",
+            "full",
+            "--output",
+            r".\shots\screen.png",
+            "--open",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Command::Full {
+                output,
+                open,
+                reveal,
+                ..
+            } => {
+                assert_eq!(output, Some(PathBuf::from(r".\shots\screen.png")));
+                assert!(open);
+                assert!(!reveal);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn full_reveal_keeps_explicit_output_dir() {
+        let cli = Cli::try_parse_from(["shotlite", "full", "--output-dir", r".\shots", "--reveal"])
+            .unwrap();
+
+        match cli.command {
+            Command::Full {
+                output_dir,
+                open,
+                reveal,
+                ..
+            } => {
+                assert_eq!(output_dir, Some(PathBuf::from(r".\shots")));
+                assert!(!open);
+                assert!(reveal);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+}

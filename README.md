@@ -14,7 +14,7 @@ There are no cloud features, accounts, telemetry, or AI features.
 
 ## Build
 
-```
+```text
 cargo build
 ```
 
@@ -22,25 +22,25 @@ cargo build
 
 Capture all detected monitors:
 
-```
+```text
 shotlite full
 ```
 
 Save one capture to a specific directory:
 
-```
+```text
 shotlite full --output-dir .\shots
 ```
 
 Save one capture to an exact file:
 
-```
+```text
 shotlite full --output .\shots\screen.png
 ```
 
 Capture a rectangle:
 
-```
+```text
 shotlite region
 shotlite region --rect 10,20,400,300
 ```
@@ -49,20 +49,20 @@ Interactive region selection is currently Windows-only. Use `--rect x,y,w,h` whe
 
 Copy a capture to the clipboard too:
 
-```
+```text
 shotlite full --clipboard
 ```
 
 Open or reveal the saved file after capture:
 
-```
+```text
 shotlite full --open
 shotlite full --reveal
 ```
 
 Redact an image by filling a rectangle with black pixels:
 
-```
+```text
 shotlite redact input.png --rect 10,20,200,80
 ```
 
@@ -71,14 +71,14 @@ Use `--output` to choose another path.
 
 Highlight or crop an existing image:
 
-```
+```text
 shotlite highlight input.png --rect 10,20,200,80
 shotlite crop input.png --rect 10,20,200,80
 ```
 
 Open a minimal editor window for an existing image:
 
-```
+```text
 shotlite edit input.png
 ```
 
@@ -86,7 +86,7 @@ In the editor, drag a rectangle, then press `R` to redact, `H` to highlight, or 
 
 Run the Windows tray app:
 
-```
+```text
 shotlite tray
 ```
 
@@ -98,7 +98,7 @@ Tray hotkeys:
 
 Show or set the output directory:
 
-```
+```text
 shotlite config path
 shotlite config show
 shotlite config set output-dir C:\Users\you\Pictures\Screenshots

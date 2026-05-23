@@ -5,6 +5,12 @@ use std::{
 
 use thiserror::Error;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PostCaptureAction {
+    Open,
+    Reveal,
+}
+
 #[derive(Debug, Error)]
 pub enum FileActionError {
     #[error("failed to open {path}: {source}")]
@@ -31,6 +37,31 @@ pub fn open(path: &Path) -> Result<(), FileActionError> {
 
 pub fn reveal(path: &Path) -> Result<(), FileActionError> {
     reveal_path(path)
+}
+
+pub fn post_capture_actions(open: bool, reveal: bool) -> Vec<PostCaptureAction> {
+    let mut actions = Vec::new();
+    if reveal {
+        actions.push(PostCaptureAction::Reveal);
+    }
+    if open {
+        actions.push(PostCaptureAction::Open);
+    }
+    actions
+}
+
+pub fn run_post_capture_actions(
+    path: &Path,
+    actions: &[PostCaptureAction],
+) -> Result<(), FileActionError> {
+    for action in actions {
+        match action {
+            PostCaptureAction::Open => open(path)?,
+            PostCaptureAction::Reveal => reveal(path)?,
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]
@@ -117,4 +148,35 @@ fn open_path(_path: &Path) -> Result<(), FileActionError> {
 #[cfg(not(any(target_os = "windows", target_os = "macos", unix)))]
 fn reveal_path(_path: &Path) -> Result<(), FileActionError> {
     Err(FileActionError::RevealUnsupported)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_flags_have_no_post_capture_actions() {
+        assert_eq!(post_capture_actions(false, false), []);
+    }
+
+    #[test]
+    fn open_flag_maps_to_open_action() {
+        assert_eq!(post_capture_actions(true, false), [PostCaptureAction::Open]);
+    }
+
+    #[test]
+    fn reveal_flag_maps_to_reveal_action() {
+        assert_eq!(
+            post_capture_actions(false, true),
+            [PostCaptureAction::Reveal]
+        );
+    }
+
+    #[test]
+    fn open_and_reveal_keep_existing_order() {
+        assert_eq!(
+            post_capture_actions(true, true),
+            [PostCaptureAction::Reveal, PostCaptureAction::Open]
+        );
+    }
 }
