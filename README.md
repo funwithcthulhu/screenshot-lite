@@ -59,6 +59,13 @@ Show a small preview window after capture:
 shotlite full --preview
 ```
 
+Open the editor after capture:
+
+```text
+shotlite full --edit
+shotlite region --edit
+```
+
 Open or reveal the saved file after capture:
 
 ```text
@@ -71,6 +78,8 @@ List recent PNG files in the configured output directory:
 ```text
 shotlite history
 shotlite history --limit 5
+shotlite history --open 1
+shotlite history --reveal 1
 ```
 
 Redact an image by filling a rectangle with black pixels:

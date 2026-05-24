@@ -31,14 +31,16 @@ fn main() -> Result<()> {
             open,
             reveal,
             preview,
+            edit,
             clipboard,
         } => {
             let output = capture_output(output, output_dir)?;
             let capture = capture::capture_full_to(output)?;
             maybe_copy(clipboard, &capture.image)?;
             maybe_preview(preview, &capture.path)?;
-            after_capture(&capture.path, open, reveal)?;
-            println!("{}", capture.path.display());
+            let output = maybe_edit(edit, &capture.path)?;
+            after_capture(&output, open, reveal)?;
+            println!("{}", output.display());
         }
         Command::Region {
             rect,
@@ -47,6 +49,7 @@ fn main() -> Result<()> {
             open,
             reveal,
             preview,
+            edit,
             clipboard,
         } => {
             let output = capture_output(output, output_dir)?;
@@ -57,8 +60,9 @@ fn main() -> Result<()> {
             let capture = capture::capture_region_to(output, rect)?;
             maybe_copy(clipboard, &capture.image)?;
             maybe_preview(preview, &capture.path)?;
-            after_capture(&capture.path, open, reveal)?;
-            println!("{}", capture.path.display());
+            let output = maybe_edit(edit, &capture.path)?;
+            after_capture(&output, open, reveal)?;
+            println!("{}", output.display());
         }
         Command::Edit { file, output } => {
             let output = editor::edit_file(&file, output)
@@ -83,10 +87,30 @@ fn main() -> Result<()> {
                 .with_context(|| format!("failed to crop {}", file.display()))?;
             println!("{}", output.display());
         }
-        Command::History { limit } => {
+        Command::History {
+            limit,
+            open,
+            reveal,
+        } => {
             let config = Config::load()?;
-            for entry in history::recent_pngs(&config.output_dir, limit)? {
-                println!("{}", entry.path.display());
+            let action = cli::history_action(open, reveal);
+            let entries = history::recent_pngs(&config.output_dir, history_limit(limit, action))?;
+            match action {
+                Some(history::HistoryAction::Open(index)) => {
+                    let entry = history::select_entry(&entries, index)?;
+                    file_action::open(&entry.path)?;
+                    println!("{}", entry.path.display());
+                }
+                Some(history::HistoryAction::Reveal(index)) => {
+                    let entry = history::select_entry(&entries, index)?;
+                    file_action::reveal(&entry.path)?;
+                    println!("{}", entry.path.display());
+                }
+                None => {
+                    for entry in entries {
+                        println!("{}", entry.path.display());
+                    }
+                }
             }
         }
         Command::Config { command } => match command {
@@ -161,12 +185,30 @@ fn after_capture(path: &std::path::Path, open: bool, reveal: bool) -> Result<()>
     Ok(())
 }
 
+fn maybe_edit(edit: bool, path: &std::path::Path) -> Result<std::path::PathBuf> {
+    if edit {
+        return editor::edit_file(path, None)
+            .with_context(|| format!("failed to edit {}", path.display()));
+    }
+
+    Ok(path.to_path_buf())
+}
+
 fn maybe_copy(copy: bool, image: &image::RgbaImage) -> Result<()> {
     if copy {
         clipboard::copy_image(image)?;
     }
 
     Ok(())
+}
+
+fn history_limit(limit: usize, action: Option<history::HistoryAction>) -> usize {
+    match action {
+        Some(history::HistoryAction::Open(index) | history::HistoryAction::Reveal(index)) => {
+            limit.max(index)
+        }
+        None => limit,
+    }
 }
 
 fn maybe_preview(show: bool, path: &std::path::Path) -> Result<()> {

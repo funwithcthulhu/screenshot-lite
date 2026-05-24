@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
-use crate::redact::Rect;
+use crate::{history::HistoryAction, redact::Rect};
 
 #[derive(Debug, Parser)]
 #[command(name = "shotlite")]
@@ -26,6 +26,8 @@ pub enum Command {
         #[arg(long)]
         preview: bool,
         #[arg(long)]
+        edit: bool,
+        #[arg(long)]
         clipboard: bool,
     },
     Region {
@@ -41,6 +43,8 @@ pub enum Command {
         reveal: bool,
         #[arg(long)]
         preview: bool,
+        #[arg(long)]
+        edit: bool,
         #[arg(long)]
         clipboard: bool,
     },
@@ -74,6 +78,10 @@ pub enum Command {
     History {
         #[arg(short, long, default_value_t = 20)]
         limit: usize,
+        #[arg(long, value_name = "INDEX", conflicts_with = "reveal")]
+        open: Option<usize>,
+        #[arg(long, value_name = "INDEX", conflicts_with = "open")]
+        reveal: Option<usize>,
     },
     Config {
         #[command(subcommand)]
@@ -95,6 +103,14 @@ pub enum ConfigCommand {
 #[derive(Clone, Debug, clap::ValueEnum)]
 pub enum ConfigKey {
     OutputDir,
+}
+
+pub fn history_action(open: Option<usize>, reveal: Option<usize>) -> Option<HistoryAction> {
+    match (open, reveal) {
+        (Some(index), None) => Some(HistoryAction::Open(index)),
+        (None, Some(index)) => Some(HistoryAction::Reveal(index)),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -119,12 +135,14 @@ mod tests {
                 open,
                 reveal,
                 preview,
+                edit,
                 ..
             } => {
                 assert_eq!(output, Some(PathBuf::from(r".\shots\screen.png")));
                 assert!(open);
                 assert!(!reveal);
                 assert!(!preview);
+                assert!(!edit);
             }
             other => panic!("unexpected command: {other:?}"),
         }
@@ -141,12 +159,14 @@ mod tests {
                 open,
                 reveal,
                 preview,
+                edit,
                 ..
             } => {
                 assert_eq!(output_dir, Some(PathBuf::from(r".\shots")));
                 assert!(!open);
                 assert!(reveal);
                 assert!(!preview);
+                assert!(!edit);
             }
             other => panic!("unexpected command: {other:?}"),
         }
@@ -169,6 +189,26 @@ mod tests {
             } => {
                 assert_eq!(output, Some(PathBuf::from(r".\shots\screen.png")));
                 assert!(preview);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn full_edit_parses_without_changing_output_selection() {
+        let cli = Cli::try_parse_from([
+            "shotlite",
+            "full",
+            "--output",
+            r".\shots\screen.png",
+            "--edit",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Command::Full { output, edit, .. } => {
+                assert_eq!(output, Some(PathBuf::from(r".\shots\screen.png")));
+                assert!(edit);
             }
             other => panic!("unexpected command: {other:?}"),
         }
@@ -198,7 +238,14 @@ mod tests {
         let cli = Cli::try_parse_from(["shotlite", "history"]).unwrap();
 
         match cli.command {
-            Command::History { limit } => assert_eq!(limit, 20),
+            Command::History {
+                limit,
+                open,
+                reveal,
+            } => {
+                assert_eq!(limit, 20);
+                assert_eq!(history_action(open, reveal), None);
+            }
             other => panic!("unexpected command: {other:?}"),
         }
     }
@@ -208,8 +255,39 @@ mod tests {
         let cli = Cli::try_parse_from(["shotlite", "history", "--limit", "5"]).unwrap();
 
         match cli.command {
-            Command::History { limit } => assert_eq!(limit, 5),
+            Command::History { limit, .. } => assert_eq!(limit, 5),
             other => panic!("unexpected command: {other:?}"),
         }
+    }
+
+    #[test]
+    fn history_open_selects_index() {
+        let cli = Cli::try_parse_from(["shotlite", "history", "--open", "2"]).unwrap();
+
+        match cli.command {
+            Command::History { open, reveal, .. } => {
+                assert_eq!(history_action(open, reveal), Some(HistoryAction::Open(2)));
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn history_reveal_selects_index() {
+        let cli = Cli::try_parse_from(["shotlite", "history", "--reveal", "3"]).unwrap();
+
+        match cli.command {
+            Command::History { open, reveal, .. } => {
+                assert_eq!(history_action(open, reveal), Some(HistoryAction::Reveal(3)));
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn history_open_and_reveal_conflict() {
+        assert!(
+            Cli::try_parse_from(["shotlite", "history", "--open", "1", "--reveal", "1"]).is_err()
+        );
     }
 }
