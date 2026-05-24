@@ -29,6 +29,67 @@ pub fn run() -> Result<(), TrayError> {
     Err(TrayError::Unsupported)
 }
 
+#[cfg(any(test, target_os = "windows"))]
+const HOTKEY_FULL: i32 = 1;
+#[cfg(any(test, target_os = "windows"))]
+const HOTKEY_REGION: i32 = 2;
+#[cfg(any(test, target_os = "windows"))]
+const HOTKEY_QUIT: i32 = 3;
+#[cfg(any(test, target_os = "windows"))]
+const MENU_FULL: usize = 10;
+#[cfg(any(test, target_os = "windows"))]
+const MENU_REGION: usize = 11;
+#[cfg(any(test, target_os = "windows"))]
+const MENU_OPEN_LAST: usize = 12;
+#[cfg(any(test, target_os = "windows"))]
+const MENU_COPY_LAST: usize = 13;
+#[cfg(any(test, target_os = "windows"))]
+const MENU_OPEN_FOLDER: usize = 14;
+#[cfg(any(test, target_os = "windows"))]
+const MENU_REVEAL_CONFIG: usize = 15;
+#[cfg(any(test, target_os = "windows"))]
+const MENU_STARTUP: usize = 16;
+#[cfg(any(test, target_os = "windows"))]
+const MENU_QUIT: usize = 17;
+
+#[cfg(any(test, target_os = "windows"))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TrayAction {
+    FullScreenshot,
+    RegionScreenshot,
+    OpenLastScreenshot,
+    CopyLastScreenshot,
+    OpenScreenshotsFolder,
+    ShowConfigFile,
+    ToggleStartup,
+    Quit,
+}
+
+#[cfg(any(test, target_os = "windows"))]
+fn action_for_hotkey_id(id: i32) -> Option<TrayAction> {
+    match id {
+        HOTKEY_FULL => Some(TrayAction::FullScreenshot),
+        HOTKEY_REGION => Some(TrayAction::RegionScreenshot),
+        HOTKEY_QUIT => Some(TrayAction::Quit),
+        _ => None,
+    }
+}
+
+#[cfg(any(test, target_os = "windows"))]
+fn action_for_menu_command(command: usize) -> Option<TrayAction> {
+    match command {
+        MENU_FULL => Some(TrayAction::FullScreenshot),
+        MENU_REGION => Some(TrayAction::RegionScreenshot),
+        MENU_OPEN_LAST => Some(TrayAction::OpenLastScreenshot),
+        MENU_COPY_LAST => Some(TrayAction::CopyLastScreenshot),
+        MENU_OPEN_FOLDER => Some(TrayAction::OpenScreenshotsFolder),
+        MENU_REVEAL_CONFIG => Some(TrayAction::ShowConfigFile),
+        MENU_STARTUP => Some(TrayAction::ToggleStartup),
+        MENU_QUIT => Some(TrayAction::Quit),
+        _ => None,
+    }
+}
+
 #[cfg(target_os = "windows")]
 mod windows_tray {
     use std::{
@@ -41,7 +102,10 @@ mod windows_tray {
         },
     };
 
-    use super::TrayError;
+    use super::{
+        HOTKEY_FULL, HOTKEY_QUIT, HOTKEY_REGION, MENU_COPY_LAST, MENU_FULL, MENU_OPEN_FOLDER,
+        MENU_OPEN_LAST, MENU_QUIT, MENU_REGION, MENU_REVEAL_CONFIG, MENU_STARTUP, TrayError,
+    };
     use crate::{
         capture::{self, CaptureOutput},
         clipboard,
@@ -74,19 +138,8 @@ mod windows_tray {
     };
 
     const ICON_SIZE: usize = 32;
-    const HOTKEY_FULL: i32 = 1;
-    const HOTKEY_REGION: i32 = 2;
-    const HOTKEY_QUIT: i32 = 3;
     const TRAY_ID: u32 = 1;
     const TRAY_MESSAGE: u32 = WM_USER + 1;
-    const MENU_FULL: usize = 10;
-    const MENU_REGION: usize = 11;
-    const MENU_OPEN_LAST: usize = 12;
-    const MENU_COPY_LAST: usize = 13;
-    const MENU_OPEN_FOLDER: usize = 14;
-    const MENU_REVEAL_CONFIG: usize = 15;
-    const MENU_STARTUP: usize = 16;
-    const MENU_QUIT: usize = 17;
     static TRAY_ICON: AtomicIsize = AtomicIsize::new(0);
     static LAST_CAPTURE: Mutex<Option<PathBuf>> = Mutex::new(None);
 
@@ -147,14 +200,14 @@ mod windows_tray {
     ) -> LRESULT {
         match msg {
             WM_HOTKEY => {
-                match wparam as i32 {
-                    HOTKEY_FULL => {
+                match super::action_for_hotkey_id(wparam as i32) {
+                    Some(super::TrayAction::FullScreenshot) => {
                         notify_capture(hwnd, capture_full());
                     }
-                    HOTKEY_REGION => {
+                    Some(super::TrayAction::RegionScreenshot) => {
                         notify_capture(hwnd, capture_region());
                     }
-                    HOTKEY_QUIT => {
+                    Some(super::TrayAction::Quit) => {
                         unsafe { PostQuitMessage(0) };
                     }
                     _ => {}
@@ -189,15 +242,17 @@ mod windows_tray {
     }
 
     fn run_menu_command(hwnd: HWND, command: usize) {
-        match command {
-            MENU_FULL => notify_capture(hwnd, capture_full()),
-            MENU_REGION => notify_capture(hwnd, capture_region()),
-            MENU_OPEN_LAST => notify_action(hwnd, open_last_capture()),
-            MENU_COPY_LAST => notify_action(hwnd, copy_last_capture()),
-            MENU_OPEN_FOLDER => notify_action(hwnd, open_output_folder()),
-            MENU_REVEAL_CONFIG => notify_action(hwnd, reveal_config_file()),
-            MENU_STARTUP => notify_action(hwnd, toggle_startup()),
-            MENU_QUIT => unsafe { PostQuitMessage(0) },
+        match super::action_for_menu_command(command) {
+            Some(super::TrayAction::FullScreenshot) => notify_capture(hwnd, capture_full()),
+            Some(super::TrayAction::RegionScreenshot) => notify_capture(hwnd, capture_region()),
+            Some(super::TrayAction::OpenLastScreenshot) => notify_action(hwnd, open_last_capture()),
+            Some(super::TrayAction::CopyLastScreenshot) => notify_action(hwnd, copy_last_capture()),
+            Some(super::TrayAction::OpenScreenshotsFolder) => {
+                notify_action(hwnd, open_output_folder())
+            }
+            Some(super::TrayAction::ShowConfigFile) => notify_action(hwnd, reveal_config_file()),
+            Some(super::TrayAction::ToggleStartup) => notify_action(hwnd, toggle_startup()),
+            Some(super::TrayAction::Quit) => unsafe { PostQuitMessage(0) },
             _ => {}
         }
     }
@@ -534,5 +589,66 @@ mod windows_tray {
         for (slot, code) in target.iter_mut().zip(value.encode_utf16().chain([0])) {
             *slot = code;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hotkey_ids_map_to_documented_actions() {
+        assert_eq!(
+            action_for_hotkey_id(HOTKEY_FULL),
+            Some(TrayAction::FullScreenshot)
+        );
+        assert_eq!(
+            action_for_hotkey_id(HOTKEY_REGION),
+            Some(TrayAction::RegionScreenshot)
+        );
+        assert_eq!(action_for_hotkey_id(HOTKEY_QUIT), Some(TrayAction::Quit));
+        assert_eq!(action_for_hotkey_id(99), None);
+    }
+
+    #[test]
+    fn menu_commands_map_to_tray_actions() {
+        assert_eq!(
+            action_for_menu_command(MENU_OPEN_LAST),
+            Some(TrayAction::OpenLastScreenshot)
+        );
+        assert_eq!(
+            action_for_menu_command(MENU_COPY_LAST),
+            Some(TrayAction::CopyLastScreenshot)
+        );
+        assert_eq!(
+            action_for_menu_command(MENU_OPEN_FOLDER),
+            Some(TrayAction::OpenScreenshotsFolder)
+        );
+        assert_eq!(
+            action_for_menu_command(MENU_REVEAL_CONFIG),
+            Some(TrayAction::ShowConfigFile)
+        );
+        assert_eq!(
+            action_for_menu_command(MENU_STARTUP),
+            Some(TrayAction::ToggleStartup)
+        );
+        assert_eq!(action_for_menu_command(MENU_QUIT), Some(TrayAction::Quit));
+        assert_eq!(action_for_menu_command(999), None);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn tray_startup_window_failure_is_clear() {
+        let error = TrayError::Window.to_string();
+
+        assert!(error.contains("failed to start tray mode"));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn tray_run_reports_unsupported_platform() {
+        let error = run().unwrap_err().to_string();
+
+        assert_eq!(error, "tray mode is only supported on Windows");
     }
 }

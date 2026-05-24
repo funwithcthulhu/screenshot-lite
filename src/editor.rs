@@ -22,12 +22,7 @@ pub enum EditorError {
 }
 
 pub fn edit_file(path: &Path) -> Result<PathBuf, EditorError> {
-    let image = image::open(path)
-        .map_err(|source| EditorError::Open {
-            path: path.to_path_buf(),
-            source,
-        })?
-        .to_rgba8();
+    let image = load_image(path)?;
     let view = ImageView::new(&image);
     let mut window = Window::new(
         "shotlite edit: drag a rectangle, then R redact, H highlight, C crop, Esc close",
@@ -53,13 +48,13 @@ pub fn edit_file(path: &Path) -> Result<PathBuf, EditorError> {
 
         if let Some(rect) = selection {
             if window.is_key_pressed(Key::R, KeyRepeat::No) {
-                return redact::redact_file(path, rect, None).map_err(EditorError::from);
+                return apply_operation(path, rect, EditorOperation::Redact);
             }
             if window.is_key_pressed(Key::H, KeyRepeat::No) {
-                return redact::highlight_file(path, rect, None).map_err(EditorError::from);
+                return apply_operation(path, rect, EditorOperation::Highlight);
             }
             if window.is_key_pressed(Key::C, KeyRepeat::No) {
-                return redact::crop_file(path, rect, None).map_err(EditorError::from);
+                return apply_operation(path, rect, EditorOperation::Crop);
             }
         }
 
@@ -71,6 +66,35 @@ pub fn edit_file(path: &Path) -> Result<PathBuf, EditorError> {
     }
 
     Err(EditorError::Canceled)
+}
+
+fn load_image(path: &Path) -> Result<RgbaImage, EditorError> {
+    image::open(path)
+        .map_err(|source| EditorError::Open {
+            path: path.to_path_buf(),
+            source,
+        })
+        .map(|image| image.to_rgba8())
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EditorOperation {
+    Redact,
+    Highlight,
+    Crop,
+}
+
+fn apply_operation(
+    path: &Path,
+    rect: Rect,
+    operation: EditorOperation,
+) -> Result<PathBuf, EditorError> {
+    match operation {
+        EditorOperation::Redact => redact::redact_file(path, rect, None),
+        EditorOperation::Highlight => redact::highlight_file(path, rect, None),
+        EditorOperation::Crop => redact::crop_file(path, rect, None),
+    }
+    .map_err(EditorError::from)
 }
 
 #[derive(Clone)]
@@ -172,5 +196,94 @@ impl RectFromPoints for Rect {
             width,
             height,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::{Rgba, RgbaImage};
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    #[test]
+    fn load_image_reports_missing_input_path() {
+        let path = temp_path("missing.png");
+
+        let error = load_image(&path).unwrap_err().to_string();
+
+        assert!(error.contains("failed to open"));
+        assert!(error.contains("missing.png"));
+    }
+
+    #[test]
+    fn load_image_reports_unsupported_input_path() {
+        let path = temp_path("not-image.txt");
+        fs::write(&path, "not an image").unwrap();
+
+        let error = load_image(&path).unwrap_err().to_string();
+
+        assert!(error.contains("failed to open"));
+        assert!(error.contains("not-image.txt"));
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn loading_image_does_not_modify_input() {
+        let path = temp_path("input.png");
+        write_test_image(&path);
+        let before = fs::read(&path).unwrap();
+
+        let image = load_image(&path).unwrap();
+
+        assert_eq!(image.dimensions(), (4, 3));
+        assert_eq!(fs::read(&path).unwrap(), before);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn editor_operations_write_copies_and_preserve_input() {
+        for operation in [
+            EditorOperation::Redact,
+            EditorOperation::Highlight,
+            EditorOperation::Crop,
+        ] {
+            let path = temp_path(&format!("{operation:?}.png"));
+            write_test_image(&path);
+            let before = fs::read(&path).unwrap();
+
+            let output = apply_operation(
+                &path,
+                Rect {
+                    x: 1,
+                    y: 1,
+                    width: 2,
+                    height: 1,
+                },
+                operation,
+            )
+            .unwrap();
+
+            assert!(output.exists());
+            assert_eq!(fs::read(&path).unwrap(), before);
+            fs::remove_file(path).unwrap();
+            fs::remove_file(output).unwrap();
+        }
+    }
+
+    fn write_test_image(path: &Path) {
+        let mut image = RgbaImage::from_pixel(4, 3, Rgba([255, 255, 255, 255]));
+        image.put_pixel(0, 0, Rgba([10, 20, 30, 255]));
+        image.save(path).unwrap();
+    }
+
+    fn temp_path(name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("shotlite-editor-{unique}-{name}"))
     }
 }

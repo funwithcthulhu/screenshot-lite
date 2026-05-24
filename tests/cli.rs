@@ -180,6 +180,47 @@ fn config_path_prints_config_location() {
     );
 }
 
+#[test]
+fn edit_command_rejects_missing_input_image() {
+    let dir = temp_test_dir("edit-missing");
+    let input = dir.join("missing.png");
+
+    let result = shotlite()
+        .args(["edit", input.to_str().unwrap()])
+        .output()
+        .unwrap();
+
+    assert!(!result.status.success());
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.contains("failed to edit"));
+    assert!(stderr.contains("failed to open"));
+    assert!(stderr.contains("missing.png"));
+
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn edit_command_rejects_non_image_input() {
+    let dir = temp_test_dir("edit-non-image");
+    let input = dir.join("input.txt");
+    fs::write(&input, "not an image").unwrap();
+    let original = fs::read(&input).unwrap();
+
+    let result = shotlite()
+        .args(["edit", input.to_str().unwrap()])
+        .output()
+        .unwrap();
+
+    assert!(!result.status.success());
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.contains("failed to edit"));
+    assert!(stderr.contains("failed to open"));
+    assert!(stderr.contains("input.txt"));
+    assert_eq!(fs::read(&input).unwrap(), original);
+
+    fs::remove_dir_all(dir).unwrap();
+}
+
 fn write_test_image(path: &Path) {
     let mut image = RgbaImage::from_pixel(4, 3, Rgba([255, 255, 255, 255]));
     image.put_pixel(0, 0, Rgba([10, 20, 30, 255]));

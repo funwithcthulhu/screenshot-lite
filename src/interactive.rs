@@ -261,3 +261,18 @@ mod windows_overlay {
         u32::from(r) | (u32::from(g) << 8) | (u32::from(b) << 16)
     }
 }
+
+#[cfg(all(test, not(target_os = "windows")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn interactive_region_reports_unsupported_platform() {
+        let error = select_region().unwrap_err().to_string();
+
+        assert_eq!(
+            error,
+            "interactive region selection is not supported on this platform"
+        );
+    }
+}
