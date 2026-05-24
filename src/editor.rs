@@ -21,7 +21,7 @@ pub enum EditorError {
     Redact(#[from] redact::RedactError),
 }
 
-pub fn edit_file(path: &Path) -> Result<PathBuf, EditorError> {
+pub fn edit_file(path: &Path, output: Option<PathBuf>) -> Result<PathBuf, EditorError> {
     let image = load_image(path)?;
     let view = ImageView::new(&image);
     let mut window = Window::new(
@@ -48,13 +48,13 @@ pub fn edit_file(path: &Path) -> Result<PathBuf, EditorError> {
 
         if let Some(rect) = selection {
             if window.is_key_pressed(Key::R, KeyRepeat::No) {
-                return apply_operation(path, rect, EditorOperation::Redact);
+                return apply_operation(path, rect, output.clone(), EditorOperation::Redact);
             }
             if window.is_key_pressed(Key::H, KeyRepeat::No) {
-                return apply_operation(path, rect, EditorOperation::Highlight);
+                return apply_operation(path, rect, output.clone(), EditorOperation::Highlight);
             }
             if window.is_key_pressed(Key::C, KeyRepeat::No) {
-                return apply_operation(path, rect, EditorOperation::Crop);
+                return apply_operation(path, rect, output.clone(), EditorOperation::Crop);
             }
         }
 
@@ -87,12 +87,13 @@ enum EditorOperation {
 fn apply_operation(
     path: &Path,
     rect: Rect,
+    output: Option<PathBuf>,
     operation: EditorOperation,
 ) -> Result<PathBuf, EditorError> {
     match operation {
-        EditorOperation::Redact => redact::redact_file(path, rect, None),
-        EditorOperation::Highlight => redact::highlight_file(path, rect, None),
-        EditorOperation::Crop => redact::crop_file(path, rect, None),
+        EditorOperation::Redact => redact::redact_file(path, rect, output),
+        EditorOperation::Highlight => redact::highlight_file(path, rect, output),
+        EditorOperation::Crop => redact::crop_file(path, rect, output),
     }
     .map_err(EditorError::from)
 }
@@ -262,6 +263,7 @@ mod tests {
                     width: 2,
                     height: 1,
                 },
+                None,
                 operation,
             )
             .unwrap();
@@ -271,6 +273,32 @@ mod tests {
             fs::remove_file(path).unwrap();
             fs::remove_file(output).unwrap();
         }
+    }
+
+    #[test]
+    fn editor_operation_honors_explicit_output_path() {
+        let path = temp_path("explicit-input.png");
+        let output = temp_path("explicit-output.png");
+        write_test_image(&path);
+
+        let actual = apply_operation(
+            &path,
+            Rect {
+                x: 1,
+                y: 1,
+                width: 2,
+                height: 1,
+            },
+            Some(output.clone()),
+            EditorOperation::Redact,
+        )
+        .unwrap();
+
+        assert_eq!(actual, output);
+        assert!(actual.exists());
+        assert!(!path.with_file_name("explicit-input-redacted.png").exists());
+        fs::remove_file(path).unwrap();
+        fs::remove_file(output).unwrap();
     }
 
     fn write_test_image(path: &Path) {

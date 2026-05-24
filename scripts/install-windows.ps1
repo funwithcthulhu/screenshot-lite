@@ -13,17 +13,28 @@ if (!(Test-Path $source)) {
 
 New-Item -ItemType Directory -Force $InstallDir | Out-Null
 Copy-Item $source (Join-Path $InstallDir "shotlite.exe") -Force
+$uninstallSource = Join-Path $PSScriptRoot "uninstall-windows.ps1"
+if (Test-Path $uninstallSource) {
+    Copy-Item $uninstallSource (Join-Path $InstallDir "uninstall-windows.ps1") -Force
+}
 
 if (!$NoStartMenuShortcut) {
     $startMenu = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
     $shortcutPath = Join-Path $startMenu "shotlite tray.lnk"
+    $uninstallShortcutPath = Join-Path $startMenu "shotlite uninstall.lnk"
     $shell = New-Object -ComObject WScript.Shell
     $shortcut = $shell.CreateShortcut($shortcutPath)
     $shortcut.TargetPath = Join-Path $InstallDir "shotlite.exe"
     $shortcut.Arguments = "tray"
     $shortcut.WorkingDirectory = $InstallDir
     $shortcut.Save()
+    $uninstallShortcut = $shell.CreateShortcut($uninstallShortcutPath)
+    $uninstallShortcut.TargetPath = "powershell.exe"
+    $uninstallShortcut.Arguments = "-ExecutionPolicy Bypass -File `"$InstallDir\uninstall-windows.ps1`""
+    $uninstallShortcut.WorkingDirectory = $InstallDir
+    $uninstallShortcut.Save()
     Write-Output "Start Menu shortcut: $shortcutPath"
+    Write-Output "Uninstall shortcut: $uninstallShortcutPath"
 }
 
 if ($StartWithWindows) {

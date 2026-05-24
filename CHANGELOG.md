@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Added tray menu actions for copying and revealing the last screenshot.
+- Added `config dir`, `config validate`, and `config reset`.
+- Added `--output` to the editor command.
+- Added a Windows uninstall Start Menu shortcut.
+- Expanded CI to build and test on Windows, Linux, and macOS.
+
 ## 0.2.0
 
 - Added Windows tray mode with hotkeys, notifications, and a right-click menu.

@@ -14,6 +14,13 @@ pub enum ClipboardError {
     Image(#[from] image::ImageError),
 }
 
+pub fn copy_text(text: &str) -> Result<(), ClipboardError> {
+    let mut clipboard = Clipboard::new().map_err(ClipboardError::Open)?;
+    clipboard
+        .set_text(text.to_owned())
+        .map_err(ClipboardError::Copy)
+}
+
 pub fn copy_image_file(path: &Path) -> Result<(), ClipboardError> {
     let image = image::open(path)?.to_rgba8();
     copy_image(&image)

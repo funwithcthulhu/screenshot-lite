@@ -80,9 +80,10 @@ Open a minimal editor window for an existing image:
 
 ```text
 shotlite edit input.png
+shotlite edit input.png --output edited.png
 ```
 
-In the editor, drag a rectangle, then press `R` to redact, `H` to highlight, or `C` to crop.
+In the editor, drag a rectangle, then press `R` to redact, `H` to highlight, or `C` to crop. `--output` chooses the file written by the edit operation.
 
 Run the Windows tray app:
 
@@ -90,7 +91,7 @@ Run the Windows tray app:
 shotlite tray
 ```
 
-Right-click the tray icon for capture, copy/open last screenshot, folder, config, startup, and quit actions.
+Right-click the tray icon for capture, copy/open/reveal last screenshot, folder, config, startup, and quit actions.
 
 Tray hotkeys:
 
@@ -102,8 +103,11 @@ Show or set the output directory:
 
 ```text
 shotlite config path
+shotlite config dir
 shotlite config open
 shotlite config show
+shotlite config validate
+shotlite config reset
 shotlite config set output-dir C:\Users\you\Pictures\Screenshots
 ```
 
@@ -113,6 +117,7 @@ shotlite config set output-dir C:\Users\you\Pictures\Screenshots
 - Clipboard support depends on the local platform clipboard.
 - Capture support depends on `xcap` support for the current desktop/session.
 - Linux and macOS support is currently CLI-first; tray and global hotkeys are not implemented there.
+- CI builds and tests the Rust code on Windows, Linux, and macOS.
 
 ## Packaging
 
@@ -149,6 +154,12 @@ By default, screenshots are written to the configured output directory. The conf
 
 ```text
 shotlite config path
+```
+
+The config directory can be printed with:
+
+```text
+shotlite config dir
 ```
 
 On Windows, the default config path is under `%APPDATA%\shotlite\config.toml`.

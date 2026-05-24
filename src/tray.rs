@@ -44,13 +44,17 @@ const MENU_OPEN_LAST: usize = 12;
 #[cfg(any(test, target_os = "windows"))]
 const MENU_COPY_LAST: usize = 13;
 #[cfg(any(test, target_os = "windows"))]
-const MENU_OPEN_FOLDER: usize = 14;
+const MENU_COPY_LAST_PATH: usize = 14;
 #[cfg(any(test, target_os = "windows"))]
-const MENU_REVEAL_CONFIG: usize = 15;
+const MENU_REVEAL_LAST: usize = 15;
 #[cfg(any(test, target_os = "windows"))]
-const MENU_STARTUP: usize = 16;
+const MENU_OPEN_FOLDER: usize = 16;
 #[cfg(any(test, target_os = "windows"))]
-const MENU_QUIT: usize = 17;
+const MENU_REVEAL_CONFIG: usize = 17;
+#[cfg(any(test, target_os = "windows"))]
+const MENU_STARTUP: usize = 18;
+#[cfg(any(test, target_os = "windows"))]
+const MENU_QUIT: usize = 19;
 
 #[cfg(any(test, target_os = "windows"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -59,6 +63,8 @@ enum TrayAction {
     RegionScreenshot,
     OpenLastScreenshot,
     CopyLastScreenshot,
+    CopyLastScreenshotPath,
+    RevealLastScreenshot,
     OpenScreenshotsFolder,
     ShowConfigFile,
     ToggleStartup,
@@ -82,6 +88,8 @@ fn action_for_menu_command(command: usize) -> Option<TrayAction> {
         MENU_REGION => Some(TrayAction::RegionScreenshot),
         MENU_OPEN_LAST => Some(TrayAction::OpenLastScreenshot),
         MENU_COPY_LAST => Some(TrayAction::CopyLastScreenshot),
+        MENU_COPY_LAST_PATH => Some(TrayAction::CopyLastScreenshotPath),
+        MENU_REVEAL_LAST => Some(TrayAction::RevealLastScreenshot),
         MENU_OPEN_FOLDER => Some(TrayAction::OpenScreenshotsFolder),
         MENU_REVEAL_CONFIG => Some(TrayAction::ShowConfigFile),
         MENU_STARTUP => Some(TrayAction::ToggleStartup),
@@ -103,8 +111,9 @@ mod windows_tray {
     };
 
     use super::{
-        HOTKEY_FULL, HOTKEY_QUIT, HOTKEY_REGION, MENU_COPY_LAST, MENU_FULL, MENU_OPEN_FOLDER,
-        MENU_OPEN_LAST, MENU_QUIT, MENU_REGION, MENU_REVEAL_CONFIG, MENU_STARTUP, TrayError,
+        HOTKEY_FULL, HOTKEY_QUIT, HOTKEY_REGION, MENU_COPY_LAST, MENU_COPY_LAST_PATH, MENU_FULL,
+        MENU_OPEN_FOLDER, MENU_OPEN_LAST, MENU_QUIT, MENU_REGION, MENU_REVEAL_CONFIG,
+        MENU_REVEAL_LAST, MENU_STARTUP, TrayError,
     };
     use crate::{
         capture::{self, CaptureOutput},
@@ -247,6 +256,12 @@ mod windows_tray {
             Some(super::TrayAction::RegionScreenshot) => notify_capture(hwnd, capture_region()),
             Some(super::TrayAction::OpenLastScreenshot) => notify_action(hwnd, open_last_capture()),
             Some(super::TrayAction::CopyLastScreenshot) => notify_action(hwnd, copy_last_capture()),
+            Some(super::TrayAction::CopyLastScreenshotPath) => {
+                notify_action(hwnd, copy_last_capture_path())
+            }
+            Some(super::TrayAction::RevealLastScreenshot) => {
+                notify_action(hwnd, reveal_last_capture())
+            }
             Some(super::TrayAction::OpenScreenshotsFolder) => {
                 notify_action(hwnd, open_output_folder())
             }
@@ -330,18 +345,29 @@ mod windows_tray {
         }
 
         let has_last_capture = LAST_CAPTURE.lock().unwrap().is_some();
+        let has_recent_capture = has_last_capture || recent_capture().is_some();
         let items = [
             (MENU_FULL, "Full screenshot", MF_STRING),
             (MENU_REGION, "Region screenshot", MF_STRING),
             (
                 MENU_OPEN_LAST,
                 "Open last screenshot",
-                enabled_menu_flag(has_last_capture),
+                enabled_menu_flag(has_recent_capture),
             ),
             (
                 MENU_COPY_LAST,
                 "Copy last screenshot",
-                enabled_menu_flag(has_last_capture),
+                enabled_menu_flag(has_recent_capture),
+            ),
+            (
+                MENU_COPY_LAST_PATH,
+                "Copy last screenshot path",
+                enabled_menu_flag(has_recent_capture),
+            ),
+            (
+                MENU_REVEAL_LAST,
+                "Reveal last screenshot",
+                enabled_menu_flag(has_recent_capture),
             ),
             (MENU_OPEN_FOLDER, "Open screenshots folder", MF_STRING),
             (MENU_REVEAL_CONFIG, "Show config file", MF_STRING),
@@ -457,6 +483,18 @@ mod windows_tray {
         Ok(Some("Copied last screenshot".to_owned()))
     }
 
+    fn copy_last_capture_path() -> Result<Option<String>, String> {
+        let path = last_capture_path()?;
+        clipboard::copy_text(&path.display().to_string()).map_err(|error| error.to_string())?;
+        Ok(Some("Copied last screenshot path".to_owned()))
+    }
+
+    fn reveal_last_capture() -> Result<Option<String>, String> {
+        let path = last_capture_path()?;
+        file_action::reveal(&path).map_err(|error| error.to_string())?;
+        Ok(None)
+    }
+
     fn reveal_config_file() -> Result<Option<String>, String> {
         let config_file =
             paths::config_file().ok_or_else(|| "could not determine config path".to_owned())?;
@@ -476,7 +514,32 @@ mod windows_tray {
             .lock()
             .unwrap()
             .clone()
+            .or_else(recent_capture)
             .ok_or_else(|| "no screenshot has been captured yet".to_owned())
+    }
+
+    fn recent_capture() -> Option<PathBuf> {
+        let config = Config::load().ok()?;
+        newest_png(&config.output_dir)
+    }
+
+    fn newest_png(dir: &Path) -> Option<PathBuf> {
+        std::fs::read_dir(dir)
+            .ok()?
+            .filter_map(Result::ok)
+            .filter_map(|entry| {
+                let path = entry.path();
+                let is_png = path
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("png"));
+                if !is_png {
+                    return None;
+                }
+                Some((entry.metadata().ok()?.modified().ok()?, path))
+            })
+            .max_by_key(|(modified, _)| *modified)
+            .map(|(_, path)| path)
     }
 
     fn enabled_menu_flag(enabled: bool) -> u32 {
@@ -619,6 +682,14 @@ mod tests {
         assert_eq!(
             action_for_menu_command(MENU_COPY_LAST),
             Some(TrayAction::CopyLastScreenshot)
+        );
+        assert_eq!(
+            action_for_menu_command(MENU_COPY_LAST_PATH),
+            Some(TrayAction::CopyLastScreenshotPath)
+        );
+        assert_eq!(
+            action_for_menu_command(MENU_REVEAL_LAST),
+            Some(TrayAction::RevealLastScreenshot)
         );
         assert_eq!(
             action_for_menu_command(MENU_OPEN_FOLDER),

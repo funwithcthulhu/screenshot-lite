@@ -42,6 +42,8 @@ pub enum Command {
     },
     Edit {
         file: PathBuf,
+        #[arg(short, long)]
+        output: Option<PathBuf>,
     },
     Tray,
     Redact {
@@ -74,8 +76,11 @@ pub enum Command {
 #[derive(Debug, Subcommand)]
 pub enum ConfigCommand {
     Path,
+    Dir,
     Show,
     Open,
+    Validate,
+    Reset,
     Set { key: ConfigKey, value: PathBuf },
 }
 
@@ -144,6 +149,13 @@ mod tests {
                 command: ConfigCommand::Open,
             } => {}
             other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn config_extra_commands_parse() {
+        for command in ["dir", "validate", "reset"] {
+            Cli::try_parse_from(["shotlite", "config", command]).unwrap();
         }
     }
 }

@@ -53,8 +53,8 @@ fn main() -> Result<()> {
             after_capture(&capture.path, open, reveal)?;
             println!("{}", capture.path.display());
         }
-        Command::Edit { file } => {
-            let output = editor::edit_file(&file)
+        Command::Edit { file, output } => {
+            let output = editor::edit_file(&file, output)
                 .with_context(|| format!("failed to edit {}", file.display()))?;
             println!("{}", output.display());
         }
@@ -82,6 +82,14 @@ fn main() -> Result<()> {
                     .context("could not determine the user config directory")?;
                 println!("{}", path.display());
             }
+            ConfigCommand::Dir => {
+                let path = paths::config_file()
+                    .context("could not determine the user config directory")?;
+                let dir = path
+                    .parent()
+                    .context("could not determine the config directory")?;
+                println!("{}", dir.display());
+            }
             ConfigCommand::Show => {
                 let config = Config::load()?;
                 print!("{}", config.to_toml()?);
@@ -90,6 +98,21 @@ fn main() -> Result<()> {
                 let config = Config::load()?;
                 let path = config.save()?;
                 file_action::open(&path)?;
+                println!("{}", path.display());
+            }
+            ConfigCommand::Validate => {
+                let config = Config::load()?;
+                if !config.output_dir.is_dir() {
+                    anyhow::bail!(
+                        "output directory does not exist or is not a directory: {}",
+                        config.output_dir.display()
+                    );
+                }
+                println!("ok");
+            }
+            ConfigCommand::Reset => {
+                let config = Config::default();
+                let path = config.save()?;
                 println!("{}", path.display());
             }
             ConfigCommand::Set { key, value } => {
