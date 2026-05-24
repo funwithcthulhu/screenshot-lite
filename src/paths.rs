@@ -30,6 +30,7 @@ pub fn default_output_dir_from(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn config_file_uses_shotlite_config_toml() {
@@ -37,6 +38,20 @@ mod tests {
             config_file_in(std::path::Path::new("config")),
             PathBuf::from("config").join("shotlite").join("config.toml")
         );
+    }
+
+    #[test]
+    fn config_file_in_does_not_create_config_directory() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("shotlite-paths-{unique}"));
+
+        let path = config_file_in(&root);
+
+        assert_eq!(path, root.join("shotlite").join("config.toml"));
+        assert!(!root.exists());
     }
 
     #[test]
