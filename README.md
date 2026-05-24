@@ -96,7 +96,7 @@ shotlite edit input.png
 shotlite edit input.png --output edited.png
 ```
 
-In the editor, drag a rectangle, then press `R` to redact, `H` to highlight, `O` to draw an outline, `A` to draw an arrow, or `1` through `9` to add a numbered marker. Press `U` to undo, `S` to save, or `C` to crop and save. `--output` chooses the file written by the edit operation.
+In the editor, drag a rectangle, then press `R` to redact, `H` to highlight, `O` to draw an outline, `A` to draw an arrow, `T` to type a text label, or `1` through `9` to add a numbered marker. Text labels are applied with `Enter`; `Backspace` edits the label and `Esc` cancels text entry. Press `U` to undo, `S` to save, or `C` to crop and save. `--output` chooses the file written by the edit operation.
 
 Run the Windows tray app:
 

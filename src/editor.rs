@@ -1,7 +1,10 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+};
 
 use image::{Rgba, RgbaImage, imageops};
-use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
+use minifb::{InputCallback, Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use thiserror::Error;
 
 use crate::redact::{self, Rect};
@@ -30,17 +33,28 @@ pub fn edit_file(path: &Path, output: Option<PathBuf>) -> Result<PathBuf, Editor
     let mut image = load_image(path)?;
     let view = ImageView::new(&image);
     let mut window = Window::new(
-        "shotlite edit: drag, R redact, H highlight, O outline, A arrow, 1-9 marker, U undo, S save, C crop",
+        "shotlite edit: drag, R redact, H highlight, O outline, A arrow, T text, 1-9 marker, U undo, S save, C crop",
         view.width,
         view.height,
         WindowOptions::default(),
     )?;
+    let typed_text = Arc::new(Mutex::new(String::new()));
+    window.set_input_callback(Box::new(TextInput::new(typed_text.clone())));
     let mut drag_start = None;
     let mut selection = None;
     let mut history = Vec::new();
+    let mut text_draft = None;
 
-    while window.is_open() && !window.is_key_down(Key::Escape) {
-        if window.get_mouse_down(MouseButton::Left) {
+    while window.is_open() {
+        if text_draft.is_some() && window.is_key_pressed(Key::Escape, KeyRepeat::No) {
+            text_draft = None;
+            selection = None;
+            take_typed_text(&typed_text);
+        } else if text_draft.is_none() && window.is_key_down(Key::Escape) {
+            break;
+        }
+
+        if text_draft.is_none() && window.get_mouse_down(MouseButton::Left) {
             if drag_start.is_none() {
                 drag_start = mouse_point(&window);
             }
@@ -53,45 +67,73 @@ pub fn edit_file(path: &Path, output: Option<PathBuf>) -> Result<PathBuf, Editor
         }
 
         if let Some(rect) = selection {
-            if window.is_key_pressed(Key::R, KeyRepeat::No) {
+            if text_draft.is_none() && window.is_key_pressed(Key::R, KeyRepeat::No) {
                 push_history(&mut history, &image);
                 redact::apply_redaction(&mut image, rect, Rgba([0, 0, 0, 255]))?;
                 selection = None;
             }
-            if window.is_key_pressed(Key::H, KeyRepeat::No) {
+            if text_draft.is_none() && window.is_key_pressed(Key::H, KeyRepeat::No) {
                 push_history(&mut history, &image);
                 redact::apply_highlight(&mut image, rect)?;
                 selection = None;
             }
-            if window.is_key_pressed(Key::O, KeyRepeat::No) {
+            if text_draft.is_none() && window.is_key_pressed(Key::O, KeyRepeat::No) {
                 push_history(&mut history, &image);
                 draw_outline(&mut image, rect, Rgba([255, 210, 0, 255]))?;
                 selection = None;
             }
-            if window.is_key_pressed(Key::A, KeyRepeat::No) {
+            if text_draft.is_none() && window.is_key_pressed(Key::A, KeyRepeat::No) {
                 push_history(&mut history, &image);
                 draw_arrow(&mut image, rect, Rgba([255, 210, 0, 255]))?;
                 selection = None;
             }
-            if window.is_key_pressed(Key::C, KeyRepeat::No) {
+            if text_draft.is_none() && window.is_key_pressed(Key::T, KeyRepeat::No) {
+                take_typed_text(&typed_text);
+                text_draft = Some(TextDraft::new(rect));
+            }
+            if text_draft.is_none() && window.is_key_pressed(Key::C, KeyRepeat::No) {
                 return crop_current_image(path, &image, rect, output.clone());
             }
-            if let Some(marker) = pressed_marker_key(&window) {
+            if text_draft.is_none()
+                && let Some(marker) = pressed_marker_key(&window)
+            {
                 push_history(&mut history, &image);
                 draw_marker(&mut image, rect, marker)?;
                 selection = None;
             }
         }
-        if window.is_key_pressed(Key::U, KeyRepeat::No)
+        if let Some(draft) = text_draft.as_mut() {
+            draft.append(&take_typed_text(&typed_text));
+            if window.is_key_pressed(Key::Backspace, KeyRepeat::Yes) {
+                draft.pop();
+            }
+            if window.is_key_pressed(Key::Enter, KeyRepeat::No) && !draft.text.is_empty() {
+                push_history(&mut history, &image);
+                draw_text_label(&mut image, draft.rect, &draft.text)?;
+                selection = None;
+                text_draft = None;
+            }
+        }
+        if text_draft.is_none()
+            && window.is_key_pressed(Key::U, KeyRepeat::No)
             && let Some(previous) = history.pop()
         {
             image = previous;
         }
-        if window.is_key_pressed(Key::S, KeyRepeat::No) {
+        if text_draft.is_none() && window.is_key_pressed(Key::S, KeyRepeat::No) {
             return save_current_image(path, &image, output.clone());
         }
 
-        let mut buffer = view.buffer_for(&image);
+        let preview = if let Some(draft) = &text_draft {
+            let mut preview = image.clone();
+            if !draft.text.is_empty() {
+                draw_text_label(&mut preview, draft.rect, &draft.text)?;
+            }
+            Some(preview)
+        } else {
+            None
+        };
+        let mut buffer = view.buffer_for(preview.as_ref().unwrap_or(&image));
         if let Some(rect) = selection {
             view.draw_rect(&mut buffer, rect);
         }
@@ -99,6 +141,63 @@ pub fn edit_file(path: &Path, output: Option<PathBuf>) -> Result<PathBuf, Editor
     }
 
     Err(EditorError::Canceled)
+}
+
+struct TextInput {
+    text: Arc<Mutex<String>>,
+}
+
+impl TextInput {
+    fn new(text: Arc<Mutex<String>>) -> Self {
+        Self { text }
+    }
+}
+
+impl InputCallback for TextInput {
+    fn add_char(&mut self, uni_char: u32) {
+        let Some(ch) = char::from_u32(uni_char) else {
+            return;
+        };
+        if !is_label_char(ch) {
+            return;
+        }
+
+        let mut text = self.text.lock().unwrap();
+        if text.len() < 128 {
+            text.push(ch);
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct TextDraft {
+    rect: Rect,
+    text: String,
+}
+
+impl TextDraft {
+    fn new(rect: Rect) -> Self {
+        Self {
+            rect,
+            text: String::new(),
+        }
+    }
+
+    fn append(&mut self, text: &str) {
+        self.text.push_str(text);
+    }
+
+    fn pop(&mut self) {
+        self.text.pop();
+    }
+}
+
+fn take_typed_text(text: &Arc<Mutex<String>>) -> String {
+    std::mem::take(&mut *text.lock().unwrap())
+}
+
+fn is_label_char(ch: char) -> bool {
+    ch.is_ascii_graphic() || ch == ' '
 }
 
 fn load_image(path: &Path) -> Result<RgbaImage, EditorError> {
@@ -271,6 +370,209 @@ fn draw_marker(image: &mut RgbaImage, rect: Rect, marker: u8) -> Result<(), Edit
     }
     draw_digit(image, cx as i32 - 3, cy as i32 - 5, marker, ink);
     Ok(())
+}
+
+fn draw_text_label(image: &mut RgbaImage, rect: Rect, text: &str) -> Result<(), EditorError> {
+    let rect = checked_rect(rect, image.width(), image.height())?;
+    let text = label_text(text);
+    if text.is_empty() {
+        return Ok(());
+    }
+
+    let scale = 2;
+    let padding = 4;
+    let char_advance = 6 * scale + 2;
+    let max_chars =
+        ((rect.width.saturating_sub(padding as u32 * 2)) as i32 / char_advance).max(1) as usize;
+    let text = text.chars().take(max_chars).collect::<String>();
+    let text_width = (text.chars().count() as i32 * char_advance - 2).max(1);
+    let background_width = rect.width.min((text_width + padding * 2) as u32);
+    let background_height = rect.height.min((7 * scale + padding * 2) as u32);
+    let background = Rgba([255, 210, 0, 255]);
+    let ink = Rgba([0, 0, 0, 255]);
+
+    for y in rect.y..rect.y + background_height {
+        for x in rect.x..rect.x + background_width {
+            image.put_pixel(x, y, background);
+        }
+    }
+
+    let mut x = rect.x as i32 + padding;
+    let y = rect.y as i32 + padding;
+    for ch in text.chars() {
+        draw_char(image, x, y, ch, scale, ink);
+        x += char_advance;
+    }
+
+    Ok(())
+}
+
+fn label_text(text: &str) -> String {
+    text.chars()
+        .filter(|ch| is_label_char(*ch))
+        .take(64)
+        .collect()
+}
+
+fn draw_char(image: &mut RgbaImage, x: i32, y: i32, ch: char, scale: i32, color: Rgba<u8>) {
+    let glyph = glyph_for(ch);
+    for (row, pattern) in glyph.iter().enumerate() {
+        for (column, value) in pattern.bytes().enumerate() {
+            if value != b'#' {
+                continue;
+            }
+            let left = x + column as i32 * scale;
+            let top = y + row as i32 * scale;
+            for dy in 0..scale {
+                for dx in 0..scale {
+                    put_pixel_checked(image, left + dx, top + dy, color);
+                }
+            }
+        }
+    }
+}
+
+fn glyph_for(ch: char) -> [&'static str; 7] {
+    match ch.to_ascii_uppercase() {
+        'A' => [
+            ".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#",
+        ],
+        'B' => [
+            "####.", "#...#", "#...#", "####.", "#...#", "#...#", "####.",
+        ],
+        'C' => [
+            ".###.", "#...#", "#....", "#....", "#....", "#...#", ".###.",
+        ],
+        'D' => [
+            "####.", "#...#", "#...#", "#...#", "#...#", "#...#", "####.",
+        ],
+        'E' => [
+            "#####", "#....", "#....", "####.", "#....", "#....", "#####",
+        ],
+        'F' => [
+            "#####", "#....", "#....", "####.", "#....", "#....", "#....",
+        ],
+        'G' => [
+            ".###.", "#...#", "#....", "#.###", "#...#", "#...#", ".###.",
+        ],
+        'H' => [
+            "#...#", "#...#", "#...#", "#####", "#...#", "#...#", "#...#",
+        ],
+        'I' => [
+            "#####", "..#..", "..#..", "..#..", "..#..", "..#..", "#####",
+        ],
+        'J' => [
+            "#####", "...#.", "...#.", "...#.", "...#.", "#..#.", ".##..",
+        ],
+        'K' => [
+            "#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#",
+        ],
+        'L' => [
+            "#....", "#....", "#....", "#....", "#....", "#....", "#####",
+        ],
+        'M' => [
+            "#...#", "##.##", "#.#.#", "#.#.#", "#...#", "#...#", "#...#",
+        ],
+        'N' => [
+            "#...#", "##..#", "##..#", "#.#.#", "#..##", "#..##", "#...#",
+        ],
+        'O' => [
+            ".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###.",
+        ],
+        'P' => [
+            "####.", "#...#", "#...#", "####.", "#....", "#....", "#....",
+        ],
+        'Q' => [
+            ".###.", "#...#", "#...#", "#...#", "#.#.#", "#..#.", ".##.#",
+        ],
+        'R' => [
+            "####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#",
+        ],
+        'S' => [
+            ".####", "#....", "#....", ".###.", "....#", "....#", "####.",
+        ],
+        'T' => [
+            "#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#..",
+        ],
+        'U' => [
+            "#...#", "#...#", "#...#", "#...#", "#...#", "#...#", ".###.",
+        ],
+        'V' => [
+            "#...#", "#...#", "#...#", "#...#", "#...#", ".#.#.", "..#..",
+        ],
+        'W' => [
+            "#...#", "#...#", "#...#", "#.#.#", "#.#.#", "##.##", "#...#",
+        ],
+        'X' => [
+            "#...#", "#...#", ".#.#.", "..#..", ".#.#.", "#...#", "#...#",
+        ],
+        'Y' => [
+            "#...#", "#...#", ".#.#.", "..#..", "..#..", "..#..", "..#..",
+        ],
+        'Z' => [
+            "#####", "....#", "...#.", "..#..", ".#...", "#....", "#####",
+        ],
+        '0' => [
+            ".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###.",
+        ],
+        '1' => [
+            "..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###.",
+        ],
+        '2' => [
+            ".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####",
+        ],
+        '3' => [
+            "####.", "....#", "....#", ".###.", "....#", "....#", "####.",
+        ],
+        '4' => [
+            "#...#", "#...#", "#...#", "#####", "....#", "....#", "....#",
+        ],
+        '5' => [
+            "#####", "#....", "#....", "####.", "....#", "....#", "####.",
+        ],
+        '6' => [
+            ".###.", "#....", "#....", "####.", "#...#", "#...#", ".###.",
+        ],
+        '7' => [
+            "#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#...",
+        ],
+        '8' => [
+            ".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###.",
+        ],
+        '9' => [
+            ".###.", "#...#", "#...#", ".####", "....#", "....#", ".###.",
+        ],
+        '!' => [
+            "..#..", "..#..", "..#..", "..#..", "..#..", ".....", "..#..",
+        ],
+        '?' => [
+            ".###.", "#...#", "....#", "...#.", "..#..", ".....", "..#..",
+        ],
+        '-' => [
+            ".....", ".....", ".....", "#####", ".....", ".....", ".....",
+        ],
+        '_' => [
+            ".....", ".....", ".....", ".....", ".....", ".....", "#####",
+        ],
+        ':' => [
+            ".....", "..#..", "..#..", ".....", "..#..", "..#..", ".....",
+        ],
+        '.' => [
+            ".....", ".....", ".....", ".....", ".....", "..#..", "..#..",
+        ],
+        ',' => [
+            ".....", ".....", ".....", ".....", ".....", "..#..", ".#...",
+        ],
+        '/' => [
+            "....#", "...#.", "...#.", "..#..", ".#...", ".#...", "#....",
+        ],
+        ' ' => [
+            ".....", ".....", ".....", ".....", ".....", ".....", ".....",
+        ],
+        _ => [
+            "#####", "....#", "...#.", "..#..", ".....", "..#..", ".....",
+        ],
+    }
 }
 
 fn draw_digit(image: &mut RgbaImage, x: i32, y: i32, digit: u8, color: Rgba<u8>) {
@@ -632,6 +934,47 @@ mod tests {
         assert_eq!(image.dimensions(), (24, 24));
         assert_eq!(image.get_pixel(2, 2), &Rgba([255, 210, 0, 255]));
         assert_ne!(image.get_pixel(12, 12), &Rgba([255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn text_label_changes_pixels_without_changing_dimensions() {
+        let mut image = RgbaImage::from_pixel(80, 24, Rgba([255, 255, 255, 255]));
+
+        draw_text_label(
+            &mut image,
+            Rect {
+                x: 2,
+                y: 2,
+                width: 70,
+                height: 18,
+            },
+            "Bug 1",
+        )
+        .unwrap();
+
+        assert_eq!(image.dimensions(), (80, 24));
+        assert_eq!(image.get_pixel(2, 2), &Rgba([255, 210, 0, 255]));
+        assert_eq!(image.get_pixel(6, 6), &Rgba([0, 0, 0, 255]));
+    }
+
+    #[test]
+    fn label_text_keeps_printable_ascii_only() {
+        assert_eq!(label_text("Hi\tthere\n!"), "Hithere!");
+    }
+
+    #[test]
+    fn text_draft_appends_and_removes_text() {
+        let mut draft = TextDraft::new(Rect {
+            x: 1,
+            y: 2,
+            width: 30,
+            height: 20,
+        });
+
+        draft.append("hello");
+        draft.pop();
+
+        assert_eq!(draft.text, "hell");
     }
 
     #[test]
