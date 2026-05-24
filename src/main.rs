@@ -7,6 +7,7 @@ mod file_action;
 mod interactive;
 mod paths;
 mod redact;
+#[cfg(target_os = "windows")]
 mod startup;
 mod tray;
 

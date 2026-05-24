@@ -6,6 +6,7 @@ pub enum InteractiveError {
     #[cfg(not(target_os = "windows"))]
     #[error("interactive region selection is not supported on this platform")]
     Unsupported,
+    #[cfg(target_os = "windows")]
     #[error("region selection was canceled")]
     Canceled,
     #[cfg(target_os = "windows")]
