@@ -67,6 +67,10 @@ pub enum Command {
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
+    History {
+        #[arg(short, long, default_value_t = 20)]
+        limit: usize,
+    },
     Config {
         #[command(subcommand)]
         command: ConfigCommand,
@@ -156,6 +160,26 @@ mod tests {
     fn config_extra_commands_parse() {
         for command in ["dir", "validate", "reset"] {
             Cli::try_parse_from(["shotlite", "config", command]).unwrap();
+        }
+    }
+
+    #[test]
+    fn history_uses_default_limit() {
+        let cli = Cli::try_parse_from(["shotlite", "history"]).unwrap();
+
+        match cli.command {
+            Command::History { limit } => assert_eq!(limit, 20),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn history_accepts_explicit_limit() {
+        let cli = Cli::try_parse_from(["shotlite", "history", "--limit", "5"]).unwrap();
+
+        match cli.command {
+            Command::History { limit } => assert_eq!(limit, 5),
+            other => panic!("unexpected command: {other:?}"),
         }
     }
 }

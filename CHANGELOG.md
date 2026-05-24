@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Added tray menu actions for copying and revealing the last screenshot.
+- Added `history` to list recent PNG files from the configured output directory.
 - Added `config dir`, `config validate`, and `config reset`.
 - Added `--output` to the editor command.
 - Added editor outline, arrow, numbered marker, undo, and explicit save actions.

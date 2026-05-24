@@ -60,6 +60,13 @@ shotlite full --open
 shotlite full --reveal
 ```
 
+List recent PNG files in the configured output directory:
+
+```text
+shotlite history
+shotlite history --limit 5
+```
+
 Redact an image by filling a rectangle with black pixels:
 
 ```text

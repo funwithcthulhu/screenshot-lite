@@ -4,6 +4,7 @@ mod clipboard;
 mod config;
 mod editor;
 mod file_action;
+mod history;
 mod interactive;
 mod paths;
 mod redact;
@@ -76,6 +77,12 @@ fn main() -> Result<()> {
             let output = redact::crop_file(&file, rect, output)
                 .with_context(|| format!("failed to crop {}", file.display()))?;
             println!("{}", output.display());
+        }
+        Command::History { limit } => {
+            let config = Config::load()?;
+            for entry in history::recent_pngs(&config.output_dir, limit)? {
+                println!("{}", entry.path.display());
+            }
         }
         Command::Config { command } => match command {
             ConfigCommand::Path => {
