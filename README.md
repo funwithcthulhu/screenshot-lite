@@ -53,6 +53,12 @@ Copy a capture to the clipboard too:
 shotlite full --clipboard
 ```
 
+Show a small preview window after capture:
+
+```text
+shotlite full --preview
+```
+
 Open or reveal the saved file after capture:
 
 ```text

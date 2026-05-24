@@ -24,6 +24,8 @@ pub enum Command {
         #[arg(long)]
         reveal: bool,
         #[arg(long)]
+        preview: bool,
+        #[arg(long)]
         clipboard: bool,
     },
     Region {
@@ -37,6 +39,8 @@ pub enum Command {
         open: bool,
         #[arg(long)]
         reveal: bool,
+        #[arg(long)]
+        preview: bool,
         #[arg(long)]
         clipboard: bool,
     },
@@ -114,11 +118,13 @@ mod tests {
                 output,
                 open,
                 reveal,
+                preview,
                 ..
             } => {
                 assert_eq!(output, Some(PathBuf::from(r".\shots\screen.png")));
                 assert!(open);
                 assert!(!reveal);
+                assert!(!preview);
             }
             other => panic!("unexpected command: {other:?}"),
         }
@@ -134,11 +140,35 @@ mod tests {
                 output_dir,
                 open,
                 reveal,
+                preview,
                 ..
             } => {
                 assert_eq!(output_dir, Some(PathBuf::from(r".\shots")));
                 assert!(!open);
                 assert!(reveal);
+                assert!(!preview);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn full_preview_parses_without_changing_output_selection() {
+        let cli = Cli::try_parse_from([
+            "shotlite",
+            "full",
+            "--output",
+            r".\shots\screen.png",
+            "--preview",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Command::Full {
+                output, preview, ..
+            } => {
+                assert_eq!(output, Some(PathBuf::from(r".\shots\screen.png")));
+                assert!(preview);
             }
             other => panic!("unexpected command: {other:?}"),
         }

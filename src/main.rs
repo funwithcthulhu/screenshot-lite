@@ -7,6 +7,7 @@ mod file_action;
 mod history;
 mod interactive;
 mod paths;
+mod preview;
 mod redact;
 #[cfg(target_os = "windows")]
 mod startup;
@@ -29,11 +30,13 @@ fn main() -> Result<()> {
             output_dir,
             open,
             reveal,
+            preview,
             clipboard,
         } => {
             let output = capture_output(output, output_dir)?;
             let capture = capture::capture_full_to(output)?;
             maybe_copy(clipboard, &capture.image)?;
+            maybe_preview(preview, &capture.path)?;
             after_capture(&capture.path, open, reveal)?;
             println!("{}", capture.path.display());
         }
@@ -43,6 +46,7 @@ fn main() -> Result<()> {
             output_dir,
             open,
             reveal,
+            preview,
             clipboard,
         } => {
             let output = capture_output(output, output_dir)?;
@@ -52,6 +56,7 @@ fn main() -> Result<()> {
             };
             let capture = capture::capture_region_to(output, rect)?;
             maybe_copy(clipboard, &capture.image)?;
+            maybe_preview(preview, &capture.path)?;
             after_capture(&capture.path, open, reveal)?;
             println!("{}", capture.path.display());
         }
@@ -159,6 +164,14 @@ fn after_capture(path: &std::path::Path, open: bool, reveal: bool) -> Result<()>
 fn maybe_copy(copy: bool, image: &image::RgbaImage) -> Result<()> {
     if copy {
         clipboard::copy_image(image)?;
+    }
+
+    Ok(())
+}
+
+fn maybe_preview(show: bool, path: &std::path::Path) -> Result<()> {
+    if show {
+        preview::show_file(path)?;
     }
 
     Ok(())
