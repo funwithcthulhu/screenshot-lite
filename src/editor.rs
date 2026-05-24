@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use image::RgbaImage;
+use image::{Rgba, RgbaImage, imageops};
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use thiserror::Error;
 
@@ -17,21 +17,27 @@ pub enum EditorError {
     Canceled,
     #[error("window error: {0}")]
     Window(#[from] minifb::Error),
+    #[error("failed to save {path}: {source}")]
+    Save {
+        path: PathBuf,
+        source: image::ImageError,
+    },
     #[error(transparent)]
     Redact(#[from] redact::RedactError),
 }
 
 pub fn edit_file(path: &Path, output: Option<PathBuf>) -> Result<PathBuf, EditorError> {
-    let image = load_image(path)?;
+    let mut image = load_image(path)?;
     let view = ImageView::new(&image);
     let mut window = Window::new(
-        "shotlite edit: drag a rectangle, then R redact, H highlight, C crop, Esc close",
+        "shotlite edit: drag, R redact, H highlight, O outline, A arrow, 1-9 marker, U undo, S save, C crop",
         view.width,
         view.height,
         WindowOptions::default(),
     )?;
     let mut drag_start = None;
     let mut selection = None;
+    let mut history = Vec::new();
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         if window.get_mouse_down(MouseButton::Left) {
@@ -48,17 +54,44 @@ pub fn edit_file(path: &Path, output: Option<PathBuf>) -> Result<PathBuf, Editor
 
         if let Some(rect) = selection {
             if window.is_key_pressed(Key::R, KeyRepeat::No) {
-                return apply_operation(path, rect, output.clone(), EditorOperation::Redact);
+                push_history(&mut history, &image);
+                redact::apply_redaction(&mut image, rect, Rgba([0, 0, 0, 255]))?;
+                selection = None;
             }
             if window.is_key_pressed(Key::H, KeyRepeat::No) {
-                return apply_operation(path, rect, output.clone(), EditorOperation::Highlight);
+                push_history(&mut history, &image);
+                redact::apply_highlight(&mut image, rect)?;
+                selection = None;
+            }
+            if window.is_key_pressed(Key::O, KeyRepeat::No) {
+                push_history(&mut history, &image);
+                draw_outline(&mut image, rect, Rgba([255, 210, 0, 255]))?;
+                selection = None;
+            }
+            if window.is_key_pressed(Key::A, KeyRepeat::No) {
+                push_history(&mut history, &image);
+                draw_arrow(&mut image, rect, Rgba([255, 210, 0, 255]))?;
+                selection = None;
             }
             if window.is_key_pressed(Key::C, KeyRepeat::No) {
-                return apply_operation(path, rect, output.clone(), EditorOperation::Crop);
+                return crop_current_image(path, &image, rect, output.clone());
+            }
+            if let Some(marker) = pressed_marker_key(&window) {
+                push_history(&mut history, &image);
+                draw_marker(&mut image, rect, marker)?;
+                selection = None;
             }
         }
+        if window.is_key_pressed(Key::U, KeyRepeat::No)
+            && let Some(previous) = history.pop()
+        {
+            image = previous;
+        }
+        if window.is_key_pressed(Key::S, KeyRepeat::No) {
+            return save_current_image(path, &image, output.clone());
+        }
 
-        let mut buffer = view.buffer.clone();
+        let mut buffer = view.buffer_for(&image);
         if let Some(rect) = selection {
             view.draw_rect(&mut buffer, rect);
         }
@@ -77,6 +110,7 @@ fn load_image(path: &Path) -> Result<RgbaImage, EditorError> {
         .map(|image| image.to_rgba8())
 }
 
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum EditorOperation {
     Redact,
@@ -84,6 +118,7 @@ enum EditorOperation {
     Crop,
 }
 
+#[cfg(test)]
 fn apply_operation(
     path: &Path,
     rect: Rect,
@@ -98,12 +133,228 @@ fn apply_operation(
     .map_err(EditorError::from)
 }
 
+fn push_history(history: &mut Vec<RgbaImage>, image: &RgbaImage) {
+    history.push(image.clone());
+    if history.len() > 20 {
+        history.remove(0);
+    }
+}
+
+fn save_current_image(
+    input: &Path,
+    image: &RgbaImage,
+    output: Option<PathBuf>,
+) -> Result<PathBuf, EditorError> {
+    let output = output.unwrap_or_else(|| editor_output_path(input, "edited"));
+    image.save(&output).map_err(|source| EditorError::Save {
+        path: output.clone(),
+        source,
+    })?;
+    Ok(output)
+}
+
+fn crop_current_image(
+    input: &Path,
+    image: &RgbaImage,
+    rect: Rect,
+    output: Option<PathBuf>,
+) -> Result<PathBuf, EditorError> {
+    let rect = checked_rect(rect, image.width(), image.height())?;
+    let output = output.unwrap_or_else(|| editor_output_path(input, "cropped"));
+    let cropped = imageops::crop_imm(image, rect.x, rect.y, rect.width, rect.height).to_image();
+    cropped.save(&output).map_err(|source| EditorError::Save {
+        path: output.clone(),
+        source,
+    })?;
+    Ok(output)
+}
+
+fn editor_output_path(input: &Path, suffix: &str) -> PathBuf {
+    let parent = input.parent().unwrap_or_else(|| Path::new(""));
+    let stem = input
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or(suffix);
+    parent.join(format!("{stem}-{suffix}.png"))
+}
+
+#[derive(Clone, Copy)]
+struct CheckedRect {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+}
+
+fn checked_rect(
+    rect: Rect,
+    image_width: u32,
+    image_height: u32,
+) -> Result<CheckedRect, EditorError> {
+    rect.checked_for_image(image_width, image_height)
+        .map(|rect| CheckedRect {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+        })
+        .map_err(EditorError::from)
+}
+
+fn draw_outline(image: &mut RgbaImage, rect: Rect, color: Rgba<u8>) -> Result<(), EditorError> {
+    let rect = checked_rect(rect, image.width(), image.height())?;
+    let right = rect.x + rect.width - 1;
+    let bottom = rect.y + rect.height - 1;
+
+    draw_line(
+        image,
+        rect.x as i32,
+        rect.y as i32,
+        right as i32,
+        rect.y as i32,
+        color,
+    );
+    draw_line(
+        image,
+        rect.x as i32,
+        bottom as i32,
+        right as i32,
+        bottom as i32,
+        color,
+    );
+    draw_line(
+        image,
+        rect.x as i32,
+        rect.y as i32,
+        rect.x as i32,
+        bottom as i32,
+        color,
+    );
+    draw_line(
+        image,
+        right as i32,
+        rect.y as i32,
+        right as i32,
+        bottom as i32,
+        color,
+    );
+    Ok(())
+}
+
+fn draw_arrow(image: &mut RgbaImage, rect: Rect, color: Rgba<u8>) -> Result<(), EditorError> {
+    let rect = checked_rect(rect, image.width(), image.height())?;
+    let start_x = rect.x as i32;
+    let start_y = rect.y as i32;
+    let end_x = (rect.x + rect.width - 1) as i32;
+    let end_y = (rect.y + rect.height - 1) as i32;
+
+    draw_line(image, start_x, start_y, end_x, end_y, color);
+    draw_line(image, end_x, end_y, end_x - 8, end_y, color);
+    draw_line(image, end_x, end_y, end_x, end_y - 8, color);
+    Ok(())
+}
+
+fn draw_marker(image: &mut RgbaImage, rect: Rect, marker: u8) -> Result<(), EditorError> {
+    let rect = checked_rect(rect, image.width(), image.height())?;
+    let cx = rect.x + rect.width / 2;
+    let cy = rect.y + rect.height / 2;
+    let radius = 10;
+    let fill = Rgba([255, 210, 0, 255]);
+    let ink = Rgba([0, 0, 0, 255]);
+
+    for y in -radius..=radius {
+        for x in -radius..=radius {
+            if x * x + y * y <= radius * radius {
+                put_pixel_checked(image, cx as i32 + x, cy as i32 + y, fill);
+            }
+        }
+    }
+    draw_digit(image, cx as i32 - 3, cy as i32 - 5, marker, ink);
+    Ok(())
+}
+
+fn draw_digit(image: &mut RgbaImage, x: i32, y: i32, digit: u8, color: Rgba<u8>) {
+    const SEGMENTS: [[bool; 7]; 10] = [
+        [true, true, true, true, true, true, false],
+        [false, true, true, false, false, false, false],
+        [true, true, false, true, true, false, true],
+        [true, true, true, true, false, false, true],
+        [false, true, true, false, false, true, true],
+        [true, false, true, true, false, true, true],
+        [true, false, true, true, true, true, true],
+        [true, true, true, false, false, false, false],
+        [true, true, true, true, true, true, true],
+        [true, true, true, true, false, true, true],
+    ];
+
+    for (index, active) in SEGMENTS[digit as usize].iter().enumerate() {
+        if !active {
+            continue;
+        }
+        match index {
+            0 => draw_line(image, x, y, x + 6, y, color),
+            1 => draw_line(image, x + 6, y, x + 6, y + 5, color),
+            2 => draw_line(image, x + 6, y + 5, x + 6, y + 10, color),
+            3 => draw_line(image, x, y + 10, x + 6, y + 10, color),
+            4 => draw_line(image, x, y + 5, x, y + 10, color),
+            5 => draw_line(image, x, y, x, y + 5, color),
+            6 => draw_line(image, x, y + 5, x + 6, y + 5, color),
+            _ => {}
+        }
+    }
+}
+
+fn draw_line(image: &mut RgbaImage, mut x0: i32, mut y0: i32, x1: i32, y1: i32, color: Rgba<u8>) {
+    let dx = (x1 - x0).abs();
+    let sx = if x0 < x1 { 1 } else { -1 };
+    let dy = -(y1 - y0).abs();
+    let sy = if y0 < y1 { 1 } else { -1 };
+    let mut error = dx + dy;
+
+    loop {
+        put_pixel_checked(image, x0, y0, color);
+        if x0 == x1 && y0 == y1 {
+            break;
+        }
+        let error2 = 2 * error;
+        if error2 >= dy {
+            error += dy;
+            x0 += sx;
+        }
+        if error2 <= dx {
+            error += dx;
+            y0 += sy;
+        }
+    }
+}
+
+fn put_pixel_checked(image: &mut RgbaImage, x: i32, y: i32, color: Rgba<u8>) {
+    if x >= 0 && y >= 0 && x < image.width() as i32 && y < image.height() as i32 {
+        image.put_pixel(x as u32, y as u32, color);
+    }
+}
+
+fn pressed_marker_key(window: &Window) -> Option<u8> {
+    [
+        (Key::Key1, 1),
+        (Key::Key2, 2),
+        (Key::Key3, 3),
+        (Key::Key4, 4),
+        (Key::Key5, 5),
+        (Key::Key6, 6),
+        (Key::Key7, 7),
+        (Key::Key8, 8),
+        (Key::Key9, 9),
+    ]
+    .into_iter()
+    .find_map(|(key, digit)| window.is_key_pressed(key, KeyRepeat::No).then_some(digit))
+}
+
 #[derive(Clone)]
 struct ImageView {
     width: usize,
     height: usize,
     scale: f32,
-    buffer: Vec<u32>,
 }
 
 impl ImageView {
@@ -115,24 +366,28 @@ impl ImageView {
             .min(1.0);
         let width = (image.width() as f32 * scale).round().max(1.0) as usize;
         let height = (image.height() as f32 * scale).round().max(1.0) as usize;
-        let mut buffer = vec![0; width * height];
-
-        for y in 0..height {
-            for x in 0..width {
-                let source_x = ((x as f32 / scale).floor() as u32).min(image.width() - 1);
-                let source_y = ((y as f32 / scale).floor() as u32).min(image.height() - 1);
-                let pixel = image.get_pixel(source_x, source_y);
-                buffer[y * width + x] =
-                    u32::from(pixel[0]) << 16 | u32::from(pixel[1]) << 8 | u32::from(pixel[2]);
-            }
-        }
 
         Self {
             width,
             height,
             scale,
-            buffer,
         }
+    }
+
+    fn buffer_for(&self, image: &RgbaImage) -> Vec<u32> {
+        let mut buffer = vec![0; self.width * self.height];
+
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let source_x = ((x as f32 / self.scale).floor() as u32).min(image.width() - 1);
+                let source_y = ((y as f32 / self.scale).floor() as u32).min(image.height() - 1);
+                let pixel = image.get_pixel(source_x, source_y);
+                buffer[y * self.width + x] =
+                    u32::from(pixel[0]) << 16 | u32::from(pixel[1]) << 8 | u32::from(pixel[2]);
+            }
+        }
+
+        buffer
     }
 
     fn to_image_rect(&self, rect: Rect) -> Option<Rect> {
@@ -297,6 +552,113 @@ mod tests {
         assert_eq!(actual, output);
         assert!(actual.exists());
         assert!(!path.with_file_name("explicit-input-redacted.png").exists());
+        fs::remove_file(path).unwrap();
+        fs::remove_file(output).unwrap();
+    }
+
+    #[test]
+    fn save_current_image_writes_edited_copy_and_preserves_input() {
+        let path = temp_path("save-input.png");
+        write_test_image(&path);
+        let original = fs::read(&path).unwrap();
+        let mut image = load_image(&path).unwrap();
+        draw_outline(
+            &mut image,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 2,
+            },
+            Rgba([255, 210, 0, 255]),
+        )
+        .unwrap();
+
+        let output = save_current_image(&path, &image, None).unwrap();
+
+        let expected_name = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .map(|stem| format!("{stem}-edited.png"))
+            .unwrap();
+        assert_eq!(
+            output.file_name().and_then(|name| name.to_str()),
+            Some(expected_name.as_str())
+        );
+        assert_eq!(fs::read(&path).unwrap(), original);
+        assert_ne!(fs::read(&output).unwrap(), original);
+        fs::remove_file(path).unwrap();
+        fs::remove_file(output).unwrap();
+    }
+
+    #[test]
+    fn annotation_tools_change_pixels_without_changing_dimensions() {
+        let mut image = RgbaImage::from_pixel(24, 24, Rgba([255, 255, 255, 255]));
+
+        draw_outline(
+            &mut image,
+            Rect {
+                x: 2,
+                y: 2,
+                width: 8,
+                height: 8,
+            },
+            Rgba([255, 210, 0, 255]),
+        )
+        .unwrap();
+        draw_arrow(
+            &mut image,
+            Rect {
+                x: 4,
+                y: 4,
+                width: 12,
+                height: 12,
+            },
+            Rgba([255, 210, 0, 255]),
+        )
+        .unwrap();
+        draw_marker(
+            &mut image,
+            Rect {
+                x: 8,
+                y: 8,
+                width: 8,
+                height: 8,
+            },
+            3,
+        )
+        .unwrap();
+
+        assert_eq!(image.dimensions(), (24, 24));
+        assert_eq!(image.get_pixel(2, 2), &Rgba([255, 210, 0, 255]));
+        assert_ne!(image.get_pixel(12, 12), &Rgba([255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn crop_current_image_crops_current_canvas() {
+        let path = temp_path("crop-input.png");
+        let output = temp_path("crop-output.png");
+        let mut image = RgbaImage::from_pixel(4, 4, Rgba([255, 255, 255, 255]));
+        image.put_pixel(1, 1, Rgba([1, 2, 3, 255]));
+        image.save(&path).unwrap();
+
+        let actual = crop_current_image(
+            &path,
+            &image,
+            Rect {
+                x: 1,
+                y: 1,
+                width: 2,
+                height: 2,
+            },
+            Some(output.clone()),
+        )
+        .unwrap();
+
+        let cropped = image::open(&actual).unwrap().to_rgba8();
+        assert_eq!(actual, output);
+        assert_eq!(cropped.dimensions(), (2, 2));
+        assert_eq!(cropped.get_pixel(0, 0), &Rgba([1, 2, 3, 255]));
         fs::remove_file(path).unwrap();
         fs::remove_file(output).unwrap();
     }

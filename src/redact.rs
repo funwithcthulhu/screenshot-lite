@@ -17,10 +17,10 @@ pub struct Rect {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ImageRect {
-    x: u32,
-    y: u32,
-    width: u32,
-    height: u32,
+    pub(crate) x: u32,
+    pub(crate) y: u32,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]
