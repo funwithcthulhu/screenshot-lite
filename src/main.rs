@@ -97,12 +97,12 @@ fn main() -> Result<()> {
             let entries = history::recent_pngs(&config.output_dir, history_limit(limit, action))?;
             match action {
                 Some(history::HistoryAction::Open(index)) => {
-                    let entry = history::select_entry(&entries, index)?;
+                    let entry = history::select_existing_entry(&entries, index)?;
                     file_action::open(&entry.path)?;
                     println!("{}", entry.path.display());
                 }
                 Some(history::HistoryAction::Reveal(index)) => {
-                    let entry = history::select_entry(&entries, index)?;
+                    let entry = history::select_existing_entry(&entries, index)?;
                     file_action::reveal(&entry.path)?;
                     println!("{}", entry.path.display());
                 }

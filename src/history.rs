@@ -25,6 +25,8 @@ pub enum HistoryError {
     ZeroIndex,
     #[error("history index {index} is not available; found {available} screenshot(s)")]
     IndexOutOfRange { index: usize, available: usize },
+    #[error("history entry {index} no longer exists: {path}")]
+    MissingEntry { index: usize, path: PathBuf },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -74,6 +76,21 @@ pub fn select_entry(entries: &[HistoryEntry], index: usize) -> Result<&HistoryEn
         index,
         available: entries.len(),
     })
+}
+
+pub fn select_existing_entry(
+    entries: &[HistoryEntry],
+    index: usize,
+) -> Result<&HistoryEntry, HistoryError> {
+    let entry = select_entry(entries, index)?;
+    if !entry.path.is_file() {
+        return Err(HistoryError::MissingEntry {
+            index,
+            path: entry.path.clone(),
+        });
+    }
+
+    Ok(entry)
 }
 
 fn is_png_file(path: &Path) -> bool {
@@ -171,6 +188,59 @@ mod tests {
     }
 
     #[test]
+    fn select_existing_entry_rejects_deleted_file() {
+        let dir = temp_test_dir("deleted-entry");
+        let first = dir.join("first.png");
+        let second = dir.join("second.png");
+        fs::write(&first, b"png").unwrap();
+        fs::write(&second, b"png").unwrap();
+        let entries = vec![
+            HistoryEntry {
+                path: first.clone(),
+                modified: None,
+            },
+            HistoryEntry {
+                path: second,
+                modified: None,
+            },
+        ];
+        fs::remove_file(&first).unwrap();
+
+        let error = select_existing_entry(&entries, 1).unwrap_err().to_string();
+
+        assert!(error.contains("history entry 1 no longer exists"));
+        assert!(error.contains("first.png"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn select_existing_entry_keeps_selected_index_when_another_file_exists() {
+        let dir = temp_test_dir("deleted-entry-index");
+        let first = dir.join("first.png");
+        let second = dir.join("second.png");
+        fs::write(&first, b"png").unwrap();
+        fs::write(&second, b"png").unwrap();
+        let entries = vec![
+            HistoryEntry {
+                path: first.clone(),
+                modified: None,
+            },
+            HistoryEntry {
+                path: second.clone(),
+                modified: None,
+            },
+        ];
+        fs::remove_file(&first).unwrap();
+
+        let error = select_existing_entry(&entries, 1).unwrap_err().to_string();
+
+        assert!(error.contains("first.png"));
+        assert!(!error.contains("second.png"));
+        assert_eq!(select_existing_entry(&entries, 2).unwrap().path, second);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn sort_newest_first_uses_modified_time_then_path() {
         let mut entries = vec![entry("b.png", 2), entry("a.png", 2), entry("c.png", 1)];
 
@@ -188,6 +258,28 @@ mod tests {
                 PathBuf::from("c.png")
             ]
         );
+    }
+
+    #[test]
+    fn sort_newest_first_uses_path_when_modified_time_is_unavailable() {
+        let mut entries = vec![
+            HistoryEntry {
+                path: PathBuf::from("b.png"),
+                modified: None,
+            },
+            HistoryEntry {
+                path: PathBuf::from("a.png"),
+                modified: None,
+            },
+        ];
+
+        sort_newest_first(&mut entries);
+
+        let paths = entries
+            .into_iter()
+            .map(|entry| entry.path)
+            .collect::<Vec<_>>();
+        assert_eq!(paths, [PathBuf::from("a.png"), PathBuf::from("b.png")]);
     }
 
     fn entry(path: &str, seconds: u64) -> HistoryEntry {
