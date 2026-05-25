@@ -82,6 +82,8 @@ shotlite history --open 1
 shotlite history --reveal 1
 ```
 
+History indexes are one-based. If a listed file is moved or deleted before `--open` or `--reveal` runs, the command reports that path as missing.
+
 Redact an image by filling a rectangle with black pixels:
 
 ```text
