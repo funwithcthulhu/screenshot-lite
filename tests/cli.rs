@@ -221,10 +221,123 @@ fn edit_command_rejects_non_image_input() {
     fs::remove_dir_all(dir).unwrap();
 }
 
+#[test]
+fn history_lists_pngs_from_configured_output_dir() {
+    let dir = temp_test_dir("history-list");
+    let output_dir = dir.join("shots");
+    fs::create_dir(&output_dir).unwrap();
+    fs::write(output_dir.join("first.png"), b"png").unwrap();
+    fs::write(output_dir.join("second.PNG"), b"png").unwrap();
+    fs::write(output_dir.join("notes.txt"), b"text").unwrap();
+    write_config(&dir, &output_dir);
+
+    let result = shotlite()
+        .env("SHOTLITE_CONFIG_DIR", &dir)
+        .args(["history"])
+        .output()
+        .unwrap();
+
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(stdout.contains("first.png"));
+    assert!(stdout.contains("second.PNG"));
+    assert!(!stdout.contains("notes.txt"));
+
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn history_limit_restricts_listed_entries() {
+    let dir = temp_test_dir("history-limit");
+    let output_dir = dir.join("shots");
+    fs::create_dir(&output_dir).unwrap();
+    fs::write(output_dir.join("first.png"), b"png").unwrap();
+    fs::write(output_dir.join("second.png"), b"png").unwrap();
+    write_config(&dir, &output_dir);
+
+    let result = shotlite()
+        .env("SHOTLITE_CONFIG_DIR", &dir)
+        .args(["history", "--limit", "1"])
+        .output()
+        .unwrap();
+
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let lines = String::from_utf8_lossy(&result.stdout)
+        .lines()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    assert_eq!(lines.len(), 1);
+    assert!(lines[0].ends_with(".png"));
+
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn history_open_zero_reports_index_error_without_file_action() {
+    let dir = temp_test_dir("history-open-zero");
+    let output_dir = dir.join("shots");
+    fs::create_dir(&output_dir).unwrap();
+    fs::write(output_dir.join("first.png"), b"png").unwrap();
+    write_config(&dir, &output_dir);
+
+    let result = shotlite()
+        .env("SHOTLITE_CONFIG_DIR", &dir)
+        .args(["history", "--open", "0"])
+        .output()
+        .unwrap();
+
+    assert!(!result.status.success());
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.contains("history index must be greater than zero"));
+    assert!(!stderr.contains("failed to open"));
+
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn history_reveal_out_of_range_reports_valid_count_without_file_action() {
+    let dir = temp_test_dir("history-reveal-out-of-range");
+    let output_dir = dir.join("shots");
+    fs::create_dir(&output_dir).unwrap();
+    fs::write(output_dir.join("first.png"), b"png").unwrap();
+    write_config(&dir, &output_dir);
+
+    let result = shotlite()
+        .env("SHOTLITE_CONFIG_DIR", &dir)
+        .args(["history", "--reveal", "3"])
+        .output()
+        .unwrap();
+
+    assert!(!result.status.success());
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.contains("history index 3 is not available; found 1 screenshot(s)"));
+    assert!(!stderr.contains("failed to reveal"));
+
+    fs::remove_dir_all(dir).unwrap();
+}
+
 fn write_test_image(path: &Path) {
     let mut image = RgbaImage::from_pixel(4, 3, Rgba([255, 255, 255, 255]));
     image.put_pixel(0, 0, Rgba([10, 20, 30, 255]));
     image.save(path).unwrap();
+}
+
+fn write_config(config_dir: &Path, output_dir: &Path) {
+    let path = config_dir.join("shotlite").join("config.toml");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        path,
+        format!("output_dir = {:?}\n", output_dir.to_string_lossy()),
+    )
+    .unwrap();
 }
 
 fn assert_redact_fails_with(rect: &str, expected: &str) {

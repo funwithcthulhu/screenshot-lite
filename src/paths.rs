@@ -3,6 +3,10 @@ use std::path::PathBuf;
 use directories::{BaseDirs, UserDirs};
 
 pub fn config_file() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("SHOTLITE_CONFIG_DIR") {
+        return Some(config_file_in(std::path::Path::new(&path)));
+    }
+
     BaseDirs::new().map(|dirs| config_file_in(dirs.config_dir()))
 }
 
@@ -38,6 +42,25 @@ mod tests {
             config_file_in(std::path::Path::new("config")),
             PathBuf::from("config").join("shotlite").join("config.toml")
         );
+    }
+
+    #[test]
+    fn config_file_honors_config_dir_override() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("shotlite-paths-override-{unique}"));
+        unsafe {
+            std::env::set_var("SHOTLITE_CONFIG_DIR", &root);
+        }
+
+        let path = config_file().unwrap();
+
+        assert_eq!(path, root.join("shotlite").join("config.toml"));
+        unsafe {
+            std::env::remove_var("SHOTLITE_CONFIG_DIR");
+        }
     }
 
     #[test]
