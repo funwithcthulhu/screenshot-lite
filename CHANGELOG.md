@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - Added tray menu actions for copying and revealing the last screenshot.
 - Added `history` to list recent PNG files from the configured output directory.
