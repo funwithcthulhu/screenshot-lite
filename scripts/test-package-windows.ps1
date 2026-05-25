@@ -1,5 +1,5 @@
 param(
-    [string]$PackageDir = (Join-Path (Resolve-Path (Join-Path $PSScriptRoot "..")) "target\dist\shotlite-v0.2.0-windows-x86_64")
+    [string]$PackageDir = (Join-Path (Resolve-Path (Join-Path $PSScriptRoot "..")) "target\dist\shotlite-v0.3.0-windows-x86_64")
 )
 
 $ErrorActionPreference = "Stop"

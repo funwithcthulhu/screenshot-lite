@@ -501,6 +501,81 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
+    #[test]
+    fn redact_highlight_and_crop_reject_non_image_input() {
+        let dir = temp_test_dir("non-image");
+        let input = dir.join("input.txt");
+        fs::write(&input, "not an image").unwrap();
+
+        for result in [
+            redact_file(
+                &input,
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1,
+                    height: 1,
+                },
+                None,
+            ),
+            highlight_file(
+                &input,
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1,
+                    height: 1,
+                },
+                None,
+            ),
+            crop_file(
+                &input,
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1,
+                    height: 1,
+                },
+                None,
+            ),
+        ] {
+            let error = result.unwrap_err().to_string();
+            assert!(error.contains("failed to open"));
+            assert!(error.contains("input.txt"));
+        }
+
+        assert!(!dir.join("input-redacted.png").exists());
+        assert!(!dir.join("input-highlighted.png").exists());
+        assert!(!dir.join("input-cropped.png").exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn explicit_output_path_can_replace_existing_file() {
+        let dir = temp_test_dir("collision");
+        let input = dir.join("input.png");
+        let output = dir.join("existing.png");
+        write_test_image(&input);
+        fs::write(&output, "old output").unwrap();
+
+        let actual = redact_file(
+            &input,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
+            Some(output.clone()),
+        )
+        .unwrap();
+
+        assert_eq!(actual, output);
+        assert!(image::open(&actual).is_ok());
+        assert_ne!(fs::read(&actual).unwrap(), b"old output");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
     fn write_test_image(path: &Path) {
         let mut image = RgbaImage::from_pixel(4, 3, Rgba([255, 255, 255, 255]));
         image.put_pixel(0, 0, Rgba([10, 20, 30, 255]));

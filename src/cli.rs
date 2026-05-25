@@ -290,4 +290,58 @@ mod tests {
             Cli::try_parse_from(["shotlite", "history", "--open", "1", "--reveal", "1"]).is_err()
         );
     }
+
+    #[test]
+    fn readme_shotlite_examples_parse() {
+        let examples = [
+            ["shotlite", "full"].as_slice(),
+            ["shotlite", "full", "--output-dir", r".\shots"].as_slice(),
+            ["shotlite", "full", "--output", r".\shots\screen.png"].as_slice(),
+            ["shotlite", "region"].as_slice(),
+            ["shotlite", "region", "--rect", "10,20,400,300"].as_slice(),
+            ["shotlite", "full", "--clipboard"].as_slice(),
+            ["shotlite", "full", "--preview"].as_slice(),
+            ["shotlite", "full", "--edit"].as_slice(),
+            ["shotlite", "region", "--edit"].as_slice(),
+            ["shotlite", "full", "--open"].as_slice(),
+            ["shotlite", "full", "--reveal"].as_slice(),
+            ["shotlite", "history"].as_slice(),
+            ["shotlite", "history", "--limit", "5"].as_slice(),
+            ["shotlite", "history", "--open", "1"].as_slice(),
+            ["shotlite", "history", "--reveal", "1"].as_slice(),
+            ["shotlite", "redact", "input.png", "--rect", "10,20,200,80"].as_slice(),
+            [
+                "shotlite",
+                "highlight",
+                "input.png",
+                "--rect",
+                "10,20,200,80",
+            ]
+            .as_slice(),
+            ["shotlite", "crop", "input.png", "--rect", "10,20,200,80"].as_slice(),
+            ["shotlite", "edit", "input.png"].as_slice(),
+            ["shotlite", "edit", "input.png", "--output", "edited.png"].as_slice(),
+            ["shotlite", "tray"].as_slice(),
+            ["shotlite", "config", "path"].as_slice(),
+            ["shotlite", "config", "dir"].as_slice(),
+            ["shotlite", "config", "open"].as_slice(),
+            ["shotlite", "config", "show"].as_slice(),
+            ["shotlite", "config", "validate"].as_slice(),
+            ["shotlite", "config", "reset"].as_slice(),
+            [
+                "shotlite",
+                "config",
+                "set",
+                "output-dir",
+                r"C:\Users\you\Pictures\Screenshots",
+            ]
+            .as_slice(),
+        ];
+
+        for example in examples {
+            Cli::try_parse_from(example).unwrap_or_else(|error| {
+                panic!("README example should parse: {example:?}\n{error}")
+            });
+        }
+    }
 }

@@ -141,6 +141,11 @@ shotlite config set output-dir C:\Users\you\Pictures\Screenshots
 - Linux and macOS support is currently CLI-first; tray and global hotkeys are not implemented there.
 - CI builds and tests the Rust code on Windows, Linux, and macOS.
 
+## Additional docs
+
+- [Privacy and redaction notes](docs/privacy-and-redaction.md)
+- [Windows smoke test](docs/windows-smoke-test.md)
+
 ## Packaging
 
 Download the Windows zip from the GitHub release page, unzip it, then run the installer from the unpacked directory.
