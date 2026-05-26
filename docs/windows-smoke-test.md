@@ -69,6 +69,10 @@ Expected result:
 
 - `target\qa\preview.png` exists;
 - a preview window opens;
+- `C` copies the image;
+- `E` opens the editor;
+- `O` opens the file;
+- `R` reveals the file;
 - `Esc` closes the preview window.
 
 Edit after capture:

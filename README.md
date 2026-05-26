@@ -59,6 +59,8 @@ Show a small preview window after capture:
 shotlite full --preview
 ```
 
+In the preview, `C` copies the image, `E` opens the editor, `O` opens the file, `R` reveals it, and `Esc` closes the window.
+
 Open the editor after capture:
 
 ```text

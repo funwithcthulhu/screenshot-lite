@@ -37,8 +37,14 @@ fn main() -> Result<()> {
             let output = capture_output(output, output_dir)?;
             let capture = capture::capture_full_to(output)?;
             maybe_copy(clipboard, &capture.image)?;
-            maybe_preview(preview, &capture.path)?;
-            let output = maybe_edit(edit, &capture.path)?;
+            let preview_action = maybe_preview(preview, &capture.path)?;
+            let (output, edited_from_preview) =
+                handle_preview_action(preview_action, &capture.path, &capture.image)?;
+            let output = if edited_from_preview {
+                output
+            } else {
+                maybe_edit(edit, &output)?
+            };
             after_capture(&output, open, reveal)?;
             println!("{}", output.display());
         }
@@ -59,8 +65,14 @@ fn main() -> Result<()> {
             };
             let capture = capture::capture_region_to(output, rect)?;
             maybe_copy(clipboard, &capture.image)?;
-            maybe_preview(preview, &capture.path)?;
-            let output = maybe_edit(edit, &capture.path)?;
+            let preview_action = maybe_preview(preview, &capture.path)?;
+            let (output, edited_from_preview) =
+                handle_preview_action(preview_action, &capture.path, &capture.image)?;
+            let output = if edited_from_preview {
+                output
+            } else {
+                maybe_edit(edit, &output)?
+            };
             after_capture(&output, open, reveal)?;
             println!("{}", output.display());
         }
@@ -202,6 +214,33 @@ fn maybe_copy(copy: bool, image: &image::RgbaImage) -> Result<()> {
     Ok(())
 }
 
+fn handle_preview_action(
+    action: Option<preview::PreviewAction>,
+    path: &std::path::Path,
+    image: &image::RgbaImage,
+) -> Result<(std::path::PathBuf, bool)> {
+    match action {
+        Some(preview::PreviewAction::Copy) => {
+            clipboard::copy_image(image)?;
+            Ok((path.to_path_buf(), false))
+        }
+        Some(preview::PreviewAction::Edit) => {
+            let output = editor::edit_file(path, None)
+                .with_context(|| format!("failed to edit {}", path.display()))?;
+            Ok((output, true))
+        }
+        Some(preview::PreviewAction::Open) => {
+            file_action::open(path)?;
+            Ok((path.to_path_buf(), false))
+        }
+        Some(preview::PreviewAction::Reveal) => {
+            file_action::reveal(path)?;
+            Ok((path.to_path_buf(), false))
+        }
+        None => Ok((path.to_path_buf(), false)),
+    }
+}
+
 fn history_limit(limit: usize, action: Option<history::HistoryAction>) -> usize {
     match action {
         Some(history::HistoryAction::Open(index) | history::HistoryAction::Reveal(index)) => {
@@ -211,10 +250,10 @@ fn history_limit(limit: usize, action: Option<history::HistoryAction>) -> usize 
     }
 }
 
-fn maybe_preview(show: bool, path: &std::path::Path) -> Result<()> {
+fn maybe_preview(show: bool, path: &std::path::Path) -> Result<Option<preview::PreviewAction>> {
     if show {
-        preview::show_file(path)?;
+        return Ok(preview::show_file(path)?);
     }
 
-    Ok(())
+    Ok(None)
 }

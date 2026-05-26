@@ -15,7 +15,15 @@ pub enum PreviewError {
     Window(#[from] minifb::Error),
 }
 
-pub fn show_file(path: &Path) -> Result<(), PreviewError> {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PreviewAction {
+    Copy,
+    Edit,
+    Open,
+    Reveal,
+}
+
+pub fn show_file(path: &Path) -> Result<Option<PreviewAction>, PreviewError> {
     let image = image::open(path)
         .map_err(|source| PreviewError::Open {
             path: path.to_path_buf(),
@@ -25,21 +33,43 @@ pub fn show_file(path: &Path) -> Result<(), PreviewError> {
     show_image(&image)
 }
 
-fn show_image(image: &RgbaImage) -> Result<(), PreviewError> {
+fn show_image(image: &RgbaImage) -> Result<Option<PreviewAction>, PreviewError> {
     let view = PreviewView::new(image);
     let buffer = view.buffer_for(image);
     let mut window = Window::new(
-        "shotlite preview: Esc closes",
+        "shotlite preview: C copy, E edit, O open, R reveal, Esc close",
         view.width,
         view.height,
         WindowOptions::default(),
     )?;
 
-    while window.is_open() && !window.is_key_down(Key::Escape) {
+    while window.is_open() {
+        if let Some(action) = preview_action_from_keys(
+            [Key::Escape, Key::C, Key::E, Key::O, Key::R]
+                .into_iter()
+                .filter(|key| window.is_key_down(*key)),
+        ) {
+            return Ok(action);
+        }
         window.update_with_buffer(&buffer, view.width, view.height)?;
     }
 
-    Ok(())
+    Ok(None)
+}
+
+fn preview_action_from_keys(keys: impl IntoIterator<Item = Key>) -> Option<Option<PreviewAction>> {
+    for key in keys {
+        match key {
+            Key::Escape => return Some(None),
+            Key::C => return Some(Some(PreviewAction::Copy)),
+            Key::E => return Some(Some(PreviewAction::Edit)),
+            Key::O => return Some(Some(PreviewAction::Open)),
+            Key::R => return Some(Some(PreviewAction::Reveal)),
+            _ => {}
+        }
+    }
+
+    None
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -122,5 +152,31 @@ mod tests {
         let view = PreviewView::new(&image);
 
         assert_eq!(view.buffer_for(&image), [0x0a141e, 0x0a141e]);
+    }
+
+    #[test]
+    fn preview_keys_map_to_actions() {
+        assert_eq!(
+            preview_action_from_keys([Key::C]),
+            Some(Some(PreviewAction::Copy))
+        );
+        assert_eq!(
+            preview_action_from_keys([Key::E]),
+            Some(Some(PreviewAction::Edit))
+        );
+        assert_eq!(
+            preview_action_from_keys([Key::O]),
+            Some(Some(PreviewAction::Open))
+        );
+        assert_eq!(
+            preview_action_from_keys([Key::R]),
+            Some(Some(PreviewAction::Reveal))
+        );
+        assert_eq!(preview_action_from_keys([Key::Escape]), Some(None));
+    }
+
+    #[test]
+    fn preview_escape_wins_when_multiple_keys_are_down() {
+        assert_eq!(preview_action_from_keys([Key::Escape, Key::C]), Some(None));
     }
 }
