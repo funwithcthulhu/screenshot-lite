@@ -139,6 +139,13 @@ fn main() -> Result<()> {
                     .context("could not determine the config directory")?;
                 println!("{}", dir.display());
             }
+            ConfigCommand::OutputDir { path } => {
+                let path = match path {
+                    Some(output_dir) => set_output_dir(output_dir)?.0,
+                    None => Config::load()?.output_dir,
+                };
+                println!("{}", path.display());
+            }
             ConfigCommand::Show => {
                 let config = Config::load()?;
                 print!("{}", config.to_toml()?);
@@ -164,18 +171,25 @@ fn main() -> Result<()> {
                 let path = config.save()?;
                 println!("{}", path.display());
             }
-            ConfigCommand::Set { key, value } => {
-                let mut config = Config::load()?;
-                match key {
-                    ConfigKey::OutputDir => config.output_dir = value,
+            ConfigCommand::Set { key, value } => match key {
+                ConfigKey::OutputDir => {
+                    let config_path = set_output_dir(value)?.1;
+                    println!("{}", config_path.display());
                 }
-                let path = config.save()?;
-                println!("{}", path.display());
-            }
+            },
         },
     }
 
     Ok(())
+}
+
+fn set_output_dir(
+    output_dir: std::path::PathBuf,
+) -> Result<(std::path::PathBuf, std::path::PathBuf)> {
+    let mut config = Config::load()?;
+    config.output_dir = output_dir;
+    let config_path = config.save()?;
+    Ok((config.output_dir, config_path))
 }
 
 fn capture_output(

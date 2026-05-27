@@ -131,11 +131,15 @@ Show or set the output directory:
 shotlite config path
 shotlite config dir
 shotlite config open
+shotlite config output-dir
+shotlite config output-dir C:\Users\you\Pictures\Screenshots
 shotlite config show
 shotlite config validate
 shotlite config reset
 shotlite config set output-dir C:\Users\you\Pictures\Screenshots
 ```
+
+`config output-dir` is the shorter form for reading or changing the screenshot directory. `config set output-dir` is kept for compatibility.
 
 ## Limitations
 

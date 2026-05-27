@@ -154,12 +154,15 @@ shotlite config reset
 Set output directory:
 
 ```text
+shotlite config output-dir target\qa
+shotlite config output-dir
 shotlite config set output-dir target\qa
 shotlite config show
 ```
 
 Expected result:
 
+- `config output-dir` prints the configured screenshot directory;
 - `config show` prints `output_dir = "target\\qa"` or an equivalent path representation.
 
 ## Package scripts

@@ -181,6 +181,91 @@ fn config_path_prints_config_location() {
 }
 
 #[test]
+fn config_output_dir_prints_current_output_dir() {
+    let dir = temp_test_dir("config-output-dir-show");
+    let output_dir = dir.join("shots");
+    write_config(&dir, &output_dir);
+
+    let result = shotlite()
+        .env("SHOTLITE_CONFIG_DIR", &dir)
+        .args(["config", "output-dir"])
+        .output()
+        .unwrap();
+
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&result.stdout).trim(),
+        output_dir.display().to_string()
+    );
+
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn config_output_dir_sets_current_output_dir() {
+    let dir = temp_test_dir("config-output-dir-set");
+    let output_dir = dir.join("new shots");
+
+    let result = shotlite()
+        .env("SHOTLITE_CONFIG_DIR", &dir)
+        .args(["config", "output-dir", output_dir.to_str().unwrap()])
+        .output()
+        .unwrap();
+
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&result.stdout).trim(),
+        output_dir.display().to_string()
+    );
+
+    let show = shotlite()
+        .env("SHOTLITE_CONFIG_DIR", &dir)
+        .args(["config", "show"])
+        .output()
+        .unwrap();
+    assert!(
+        String::from_utf8_lossy(&show.stdout).contains(&output_dir.display().to_string()),
+        "{}",
+        String::from_utf8_lossy(&show.stdout)
+    );
+
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn config_set_output_dir_keeps_printing_config_path() {
+    let dir = temp_test_dir("config-set-output-dir");
+    let output_dir = dir.join("shots");
+    let config_path = dir.join("shotlite").join("config.toml");
+
+    let result = shotlite()
+        .env("SHOTLITE_CONFIG_DIR", &dir)
+        .args(["config", "set", "output-dir", output_dir.to_str().unwrap()])
+        .output()
+        .unwrap();
+
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&result.stdout).trim(),
+        config_path.display().to_string()
+    );
+
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn edit_command_rejects_missing_input_image() {
     let dir = temp_test_dir("edit-missing");
     let input = dir.join("missing.png");

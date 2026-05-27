@@ -93,6 +93,7 @@ pub enum Command {
 pub enum ConfigCommand {
     Path,
     Dir,
+    OutputDir { path: Option<PathBuf> },
     Show,
     Open,
     Validate,
@@ -234,6 +235,25 @@ mod tests {
     }
 
     #[test]
+    fn config_output_dir_shows_or_sets_output_dir() {
+        let show = Cli::try_parse_from(["shotlite", "config", "output-dir"]).unwrap();
+        match show.command {
+            Command::Config {
+                command: ConfigCommand::OutputDir { path },
+            } => assert_eq!(path, None),
+            other => panic!("unexpected command: {other:?}"),
+        }
+
+        let set = Cli::try_parse_from(["shotlite", "config", "output-dir", r".\shots"]).unwrap();
+        match set.command {
+            Command::Config {
+                command: ConfigCommand::OutputDir { path },
+            } => assert_eq!(path, Some(PathBuf::from(r".\shots"))),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
     fn history_uses_default_limit() {
         let cli = Cli::try_parse_from(["shotlite", "history"]).unwrap();
 
@@ -325,6 +345,14 @@ mod tests {
             ["shotlite", "config", "path"].as_slice(),
             ["shotlite", "config", "dir"].as_slice(),
             ["shotlite", "config", "open"].as_slice(),
+            ["shotlite", "config", "output-dir"].as_slice(),
+            [
+                "shotlite",
+                "config",
+                "output-dir",
+                r"C:\Users\you\Pictures\Screenshots",
+            ]
+            .as_slice(),
             ["shotlite", "config", "show"].as_slice(),
             ["shotlite", "config", "validate"].as_slice(),
             ["shotlite", "config", "reset"].as_slice(),
