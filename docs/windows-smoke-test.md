@@ -69,6 +69,7 @@ Expected result:
 
 - `target\qa\preview.png` exists;
 - a preview window opens;
+- the preview window shows clickable copy, edit, open, reveal, and close actions;
 - `C` copies the image;
 - `E` opens the editor;
 - `O` opens the file;
