@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+#[cfg(target_os = "windows")]
 use std::path::Path;
 
 use arboard::{Clipboard, ImageData};
