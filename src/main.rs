@@ -38,8 +38,12 @@ fn main() -> Result<()> {
             let capture = capture::capture_full_to(output)?;
             maybe_copy(clipboard, &capture.image)?;
             let preview_action = maybe_preview(preview, &capture.path)?;
-            let (output, edited_from_preview) =
+            let preview_result =
                 handle_preview_action(preview_action, &capture.path, &capture.image)?;
+            let Some((output, edited_from_preview)) = preview_result else {
+                println!("deleted {}", capture.path.display());
+                return Ok(());
+            };
             let output = if edited_from_preview {
                 output
             } else {
@@ -66,8 +70,12 @@ fn main() -> Result<()> {
             let capture = capture::capture_region_to(output, rect)?;
             maybe_copy(clipboard, &capture.image)?;
             let preview_action = maybe_preview(preview, &capture.path)?;
-            let (output, edited_from_preview) =
+            let preview_result =
                 handle_preview_action(preview_action, &capture.path, &capture.image)?;
+            let Some((output, edited_from_preview)) = preview_result else {
+                println!("deleted {}", capture.path.display());
+                return Ok(());
+            };
             let output = if edited_from_preview {
                 output
             } else {
@@ -232,26 +240,35 @@ fn handle_preview_action(
     action: Option<preview::PreviewAction>,
     path: &std::path::Path,
     image: &image::RgbaImage,
-) -> Result<(std::path::PathBuf, bool)> {
+) -> Result<Option<(std::path::PathBuf, bool)>> {
     match action {
         Some(preview::PreviewAction::Copy) => {
             clipboard::copy_image(image)?;
-            Ok((path.to_path_buf(), false))
+            Ok(Some((path.to_path_buf(), false)))
+        }
+        Some(preview::PreviewAction::CopyPath) => {
+            clipboard::copy_text(&path.display().to_string())?;
+            Ok(Some((path.to_path_buf(), false)))
         }
         Some(preview::PreviewAction::Edit) => {
             let output = editor::edit_file(path, None)
                 .with_context(|| format!("failed to edit {}", path.display()))?;
-            Ok((output, true))
+            Ok(Some((output, true)))
         }
         Some(preview::PreviewAction::Open) => {
             file_action::open(path)?;
-            Ok((path.to_path_buf(), false))
+            Ok(Some((path.to_path_buf(), false)))
         }
         Some(preview::PreviewAction::Reveal) => {
             file_action::reveal(path)?;
-            Ok((path.to_path_buf(), false))
+            Ok(Some((path.to_path_buf(), false)))
         }
-        None => Ok((path.to_path_buf(), false)),
+        Some(preview::PreviewAction::Delete) => {
+            std::fs::remove_file(path)
+                .with_context(|| format!("failed to delete {}", path.display()))?;
+            Ok(None)
+        }
+        None => Ok(Some((path.to_path_buf(), false))),
     }
 }
 

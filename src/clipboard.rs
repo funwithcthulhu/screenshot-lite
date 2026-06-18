@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-#[cfg(target_os = "windows")]
 use std::path::Path;
 
 use arboard::{Clipboard, ImageData};
@@ -17,7 +16,6 @@ pub enum ClipboardError {
     Image(#[from] image::ImageError),
 }
 
-#[cfg(target_os = "windows")]
 pub fn copy_text(text: &str) -> Result<(), ClipboardError> {
     let mut clipboard = Clipboard::new().map_err(ClipboardError::Open)?;
     clipboard

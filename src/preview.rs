@@ -5,10 +5,14 @@ use minifb::{Key, MouseButton, MouseMode, Window, WindowOptions};
 use thiserror::Error;
 
 const ACTION_BAR_HEIGHT: usize = 48;
-const BUTTONS: [PreviewButton; 5] = [
+const BUTTONS: [PreviewButton; 7] = [
     PreviewButton {
         label: "Copy",
         action: Some(PreviewAction::Copy),
+    },
+    PreviewButton {
+        label: "Path",
+        action: Some(PreviewAction::CopyPath),
     },
     PreviewButton {
         label: "Edit",
@@ -21,6 +25,10 @@ const BUTTONS: [PreviewButton; 5] = [
     PreviewButton {
         label: "Reveal",
         action: Some(PreviewAction::Reveal),
+    },
+    PreviewButton {
+        label: "Delete",
+        action: Some(PreviewAction::Delete),
     },
     PreviewButton {
         label: "Close",
@@ -42,9 +50,11 @@ pub enum PreviewError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PreviewAction {
     Copy,
+    CopyPath,
     Edit,
     Open,
     Reveal,
+    Delete,
 }
 
 pub fn show_file(path: &Path) -> Result<Option<PreviewAction>, PreviewError> {
@@ -61,7 +71,7 @@ fn show_image(image: &RgbaImage) -> Result<Option<PreviewAction>, PreviewError> 
     let view = PreviewView::new(image);
     let buffer = view.buffer_for(image);
     let mut window = Window::new(
-        "shotlite preview: C copy, E edit, O open, R reveal, Esc close",
+        "shotlite preview: C copy, P path, E edit, O open, R reveal, Del delete, Esc close",
         view.width,
         view.height,
         WindowOptions::default(),
@@ -69,9 +79,17 @@ fn show_image(image: &RgbaImage) -> Result<Option<PreviewAction>, PreviewError> 
 
     while window.is_open() {
         if let Some(action) = preview_action_from_keys(
-            [Key::Escape, Key::C, Key::E, Key::O, Key::R]
-                .into_iter()
-                .filter(|key| window.is_key_down(*key)),
+            [
+                Key::Escape,
+                Key::C,
+                Key::P,
+                Key::E,
+                Key::O,
+                Key::R,
+                Key::Delete,
+            ]
+            .into_iter()
+            .filter(|key| window.is_key_down(*key)),
         ) {
             return Ok(action);
         }
@@ -92,9 +110,11 @@ fn preview_action_from_keys(keys: impl IntoIterator<Item = Key>) -> Option<Optio
         match key {
             Key::Escape => return Some(None),
             Key::C => return Some(Some(PreviewAction::Copy)),
+            Key::P => return Some(Some(PreviewAction::CopyPath)),
             Key::E => return Some(Some(PreviewAction::Edit)),
             Key::O => return Some(Some(PreviewAction::Open)),
             Key::R => return Some(Some(PreviewAction::Reveal)),
+            Key::Delete => return Some(Some(PreviewAction::Delete)),
             _ => {}
         }
     }
@@ -287,6 +307,9 @@ fn glyph_for(ch: char) -> [u8; 7] {
         'E' => [
             0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111,
         ],
+        'H' => [
+            0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
+        ],
         'I' => [
             0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b11111,
         ],
@@ -368,6 +391,10 @@ mod tests {
             Some(Some(PreviewAction::Copy))
         );
         assert_eq!(
+            preview_action_from_keys([Key::P]),
+            Some(Some(PreviewAction::CopyPath))
+        );
+        assert_eq!(
             preview_action_from_keys([Key::E]),
             Some(Some(PreviewAction::Edit))
         );
@@ -378,6 +405,10 @@ mod tests {
         assert_eq!(
             preview_action_from_keys([Key::R]),
             Some(Some(PreviewAction::Reveal))
+        );
+        assert_eq!(
+            preview_action_from_keys([Key::Delete]),
+            Some(Some(PreviewAction::Delete))
         );
         assert_eq!(preview_action_from_keys([Key::Escape]), Some(None));
     }
@@ -397,18 +428,26 @@ mod tests {
             Some(Some(PreviewAction::Copy))
         );
         assert_eq!(
-            preview_action_from_click(&view, 110.0, y),
+            preview_action_from_click(&view, 80.0, y),
+            Some(Some(PreviewAction::CopyPath))
+        );
+        assert_eq!(
+            preview_action_from_click(&view, 150.0, y),
             Some(Some(PreviewAction::Edit))
         );
         assert_eq!(
-            preview_action_from_click(&view, 210.0, y),
+            preview_action_from_click(&view, 220.0, y),
             Some(Some(PreviewAction::Open))
         );
         assert_eq!(
-            preview_action_from_click(&view, 310.0, y),
+            preview_action_from_click(&view, 300.0, y),
             Some(Some(PreviewAction::Reveal))
         );
-        assert_eq!(preview_action_from_click(&view, 410.0, y), Some(None));
+        assert_eq!(
+            preview_action_from_click(&view, 370.0, y),
+            Some(Some(PreviewAction::Delete))
+        );
+        assert_eq!(preview_action_from_click(&view, 450.0, y), Some(None));
     }
 
     #[test]

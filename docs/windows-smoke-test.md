@@ -69,11 +69,13 @@ Expected result:
 
 - `target\qa\preview.png` exists;
 - a preview window opens;
-- the preview window shows clickable copy, edit, open, reveal, and close actions;
+- the preview window shows clickable copy, copy path, edit, open, reveal, delete, and close actions;
 - `C` copies the image;
+- `P` copies the saved file path;
 - `E` opens the editor;
 - `O` opens the file;
 - `R` reveals the file;
+- `Delete` deletes the saved file and closes the preview;
 - `Esc` closes the preview window.
 
 Edit after capture:
