@@ -34,6 +34,19 @@ Expected result:
 - `target\qa\region-rect.png` exists;
 - stdout prints the saved path.
 
+Monitor capture:
+
+```text
+shotlite monitor --output target\qa\monitor-active.png
+shotlite monitor --index 0 --output target\qa\monitor-0.png
+```
+
+Expected result:
+
+- without `--index`, the monitor containing the cursor is captured when Windows reports the cursor position;
+- `--index 0` captures the first monitor reported by the capture backend;
+- stdout prints the saved path.
+
 Windows region overlay:
 
 ```text

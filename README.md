@@ -26,6 +26,15 @@ Capture all detected monitors:
 shotlite full
 ```
 
+Capture one monitor:
+
+```text
+shotlite monitor
+shotlite monitor --index 1
+```
+
+Without `--index`, `monitor` captures the monitor containing the cursor when that can be determined. Monitor indexes are zero-based.
+
 Save one capture to a specific directory:
 
 ```text

@@ -30,6 +30,24 @@ pub enum Command {
         #[arg(long)]
         clipboard: bool,
     },
+    Monitor {
+        #[arg(long)]
+        index: Option<usize>,
+        #[arg(long, conflicts_with = "output_dir")]
+        output: Option<PathBuf>,
+        #[arg(long)]
+        output_dir: Option<PathBuf>,
+        #[arg(long)]
+        open: bool,
+        #[arg(long)]
+        reveal: bool,
+        #[arg(long)]
+        preview: bool,
+        #[arg(long)]
+        edit: bool,
+        #[arg(long)]
+        clipboard: bool,
+    },
     Region {
         #[arg(long, conflicts_with = "last")]
         rect: Option<Rect>,
@@ -218,6 +236,27 @@ mod tests {
     }
 
     #[test]
+    fn monitor_index_parses_without_changing_output_selection() {
+        let cli = Cli::try_parse_from([
+            "shotlite",
+            "monitor",
+            "--index",
+            "1",
+            "--output",
+            r".\shots\monitor.png",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Command::Monitor { index, output, .. } => {
+                assert_eq!(index, Some(1));
+                assert_eq!(output, Some(PathBuf::from(r".\shots\monitor.png")));
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
     fn config_open_parses() {
         let cli = Cli::try_parse_from(["shotlite", "config", "open"]).unwrap();
 
@@ -319,6 +358,8 @@ mod tests {
             ["shotlite", "full"].as_slice(),
             ["shotlite", "full", "--output-dir", r".\shots"].as_slice(),
             ["shotlite", "full", "--output", r".\shots\screen.png"].as_slice(),
+            ["shotlite", "monitor"].as_slice(),
+            ["shotlite", "monitor", "--index", "1"].as_slice(),
             ["shotlite", "region"].as_slice(),
             ["shotlite", "region", "--rect", "10,20,400,300"].as_slice(),
             ["shotlite", "region", "--last"].as_slice(),

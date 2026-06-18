@@ -3,6 +3,8 @@ use std::{fs, path::PathBuf};
 use chrono::{DateTime, Local};
 use image::{RgbaImage, imageops};
 use thiserror::Error;
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::{Foundation::POINT, UI::WindowsAndMessaging::GetCursorPos};
 use xcap::Monitor;
 
 use crate::redact::Rect;
@@ -11,6 +13,8 @@ use crate::redact::Rect;
 pub enum CaptureError {
     #[error("no monitors found")]
     NoMonitors,
+    #[error("monitor index {index} is not available; found {available} monitor(s)")]
+    MonitorIndexOutOfRange { index: usize, available: usize },
     #[error("capture failed: {0}")]
     Capture(#[from] xcap::XCapError),
     #[error("failed to create output directory {path}: {source}")]
@@ -43,6 +47,28 @@ pub fn capture_full_to(output: CaptureOutput) -> Result<CaptureResult, CaptureEr
     let monitors = Monitor::all()?;
     let image = capture_monitors(&monitors)?;
     save_capture(output, image)
+}
+
+pub fn capture_monitor_to(
+    output: CaptureOutput,
+    index: Option<usize>,
+) -> Result<CaptureResult, CaptureError> {
+    let monitors = Monitor::all()?;
+    if monitors.is_empty() {
+        return Err(CaptureError::NoMonitors);
+    }
+    let index = match index {
+        Some(index) => index,
+        None => active_monitor_index(&monitor_geometries(&monitors)?).unwrap_or(0),
+    };
+    let Some(monitor) = monitors.get(index) else {
+        return Err(CaptureError::MonitorIndexOutOfRange {
+            index,
+            available: monitors.len(),
+        });
+    };
+
+    save_capture(output, monitor.capture_image()?)
 }
 
 pub fn capture_region_to(
@@ -165,7 +191,13 @@ struct MonitorGeometry {
 }
 
 fn monitor_bounds(monitors: &[Monitor]) -> Result<Bounds, CaptureError> {
-    let geometries = monitors
+    let geometries = monitor_geometries(monitors)?;
+
+    bounds_from_geometries(&geometries)
+}
+
+fn monitor_geometries(monitors: &[Monitor]) -> Result<Vec<MonitorGeometry>, CaptureError> {
+    monitors
         .iter()
         .map(|monitor| {
             Ok(MonitorGeometry {
@@ -175,9 +207,41 @@ fn monitor_bounds(monitors: &[Monitor]) -> Result<Bounds, CaptureError> {
                 height: monitor.height()?,
             })
         })
-        .collect::<Result<Vec<_>, xcap::XCapError>>()?;
+        .collect::<Result<Vec<_>, xcap::XCapError>>()
+        .map_err(CaptureError::Capture)
+}
 
-    bounds_from_geometries(&geometries)
+fn active_monitor_index(monitors: &[MonitorGeometry]) -> Option<usize> {
+    cursor_position().and_then(|point| monitor_index_for_point(monitors, point.0, point.1))
+}
+
+#[cfg(target_os = "windows")]
+fn cursor_position() -> Option<(i32, i32)> {
+    let mut point = POINT { x: 0, y: 0 };
+    let ok = unsafe { GetCursorPos(&mut point) };
+    (ok != 0).then_some((point.x, point.y))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn cursor_position() -> Option<(i32, i32)> {
+    None
+}
+
+fn monitor_index_for_point(monitors: &[MonitorGeometry], x: i32, y: i32) -> Option<usize> {
+    monitors
+        .iter()
+        .position(|monitor| point_inside_monitor(x, y, *monitor))
+}
+
+fn point_inside_monitor(x: i32, y: i32, monitor: MonitorGeometry) -> bool {
+    let Some(right) = monitor.x.checked_add_unsigned(monitor.width) else {
+        return false;
+    };
+    let Some(bottom) = monitor.y.checked_add_unsigned(monitor.height) else {
+        return false;
+    };
+
+    x >= monitor.x && y >= monitor.y && x < right && y < bottom
 }
 
 fn bounds_from_geometries(monitors: &[MonitorGeometry]) -> Result<Bounds, CaptureError> {
@@ -293,6 +357,28 @@ mod tests {
                 height: 1080
             }
         );
+    }
+
+    #[test]
+    fn monitor_index_for_point_uses_monitor_containing_point() {
+        let monitors = [
+            MonitorGeometry {
+                x: -1280,
+                y: 0,
+                width: 1280,
+                height: 720,
+            },
+            MonitorGeometry {
+                x: 0,
+                y: 0,
+                width: 1920,
+                height: 1080,
+            },
+        ];
+
+        assert_eq!(monitor_index_for_point(&monitors, -1, 10), Some(0));
+        assert_eq!(monitor_index_for_point(&monitors, 0, 10), Some(1));
+        assert_eq!(monitor_index_for_point(&monitors, 3000, 10), None);
     }
 
     fn temp_test_dir(name: &str) -> PathBuf {

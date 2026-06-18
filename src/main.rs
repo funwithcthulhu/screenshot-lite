@@ -52,6 +52,34 @@ fn main() -> Result<()> {
             after_capture(&output, open, reveal)?;
             println!("{}", output.display());
         }
+        Command::Monitor {
+            index,
+            output,
+            output_dir,
+            open,
+            reveal,
+            preview,
+            edit,
+            clipboard,
+        } => {
+            let output = capture_output(output, output_dir)?;
+            let capture = capture::capture_monitor_to(output, index)?;
+            maybe_copy(clipboard, &capture.image)?;
+            let preview_action = maybe_preview(preview, &capture.path)?;
+            let preview_result =
+                handle_preview_action(preview_action, &capture.path, &capture.image)?;
+            let Some((output, edited_from_preview)) = preview_result else {
+                println!("deleted {}", capture.path.display());
+                return Ok(());
+            };
+            let output = if edited_from_preview {
+                output
+            } else {
+                maybe_edit(edit, &output)?
+            };
+            after_capture(&output, open, reveal)?;
+            println!("{}", output.display());
+        }
         Command::Region {
             rect,
             last,
