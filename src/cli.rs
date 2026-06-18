@@ -31,8 +31,10 @@ pub enum Command {
         clipboard: bool,
     },
     Region {
-        #[arg(long)]
+        #[arg(long, conflicts_with = "last")]
         rect: Option<Rect>,
+        #[arg(long)]
+        last: bool,
         #[arg(long, conflicts_with = "output_dir")]
         output: Option<PathBuf>,
         #[arg(long)]
@@ -319,6 +321,7 @@ mod tests {
             ["shotlite", "full", "--output", r".\shots\screen.png"].as_slice(),
             ["shotlite", "region"].as_slice(),
             ["shotlite", "region", "--rect", "10,20,400,300"].as_slice(),
+            ["shotlite", "region", "--last"].as_slice(),
             ["shotlite", "full", "--clipboard"].as_slice(),
             ["shotlite", "full", "--preview"].as_slice(),
             ["shotlite", "full", "--edit"].as_slice(),
@@ -371,5 +374,13 @@ mod tests {
                 panic!("README example should parse: {example:?}\n{error}")
             });
         }
+    }
+
+    #[test]
+    fn region_last_conflicts_with_rect() {
+        assert!(
+            Cli::try_parse_from(["shotlite", "region", "--last", "--rect", "10,20,400,300"])
+                .is_err()
+        );
     }
 }

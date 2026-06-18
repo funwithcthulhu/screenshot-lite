@@ -43,9 +43,10 @@ Capture a rectangle:
 ```text
 shotlite region
 shotlite region --rect 10,20,400,300
+shotlite region --last
 ```
 
-Interactive region selection is currently Windows-only. Use `--rect x,y,w,h` where the overlay is not available.
+Interactive region selection is currently Windows-only. Use `--rect x,y,w,h` where the overlay is not available. `--last` reuses the last successful region rectangle.
 
 Copy a capture to the clipboard too:
 

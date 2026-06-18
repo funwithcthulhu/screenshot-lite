@@ -46,6 +46,17 @@ Expected result:
 - selecting a region writes `target\qa\region-overlay.png`;
 - canceling or platform failure is reported as an error.
 
+Last region:
+
+```text
+shotlite region --last --output target\qa\region-last.png
+```
+
+Expected result:
+
+- after a successful region capture, `--last` captures the same rectangle again;
+- if no region has been saved yet, the command reports that no last region is available.
+
 ## Clipboard
 
 ```text

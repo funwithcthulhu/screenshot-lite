@@ -6,7 +6,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::paths;
+use crate::{paths, redact::Rect};
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
@@ -39,12 +39,15 @@ pub enum ConfigError {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Config {
     pub output_dir: PathBuf,
+    #[serde(default)]
+    pub last_region: Option<Rect>,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             output_dir: paths::default_output_dir(),
+            last_region: None,
         }
     }
 }
@@ -121,6 +124,17 @@ fn config_toml_for_write(config: &Config, path: &Path) -> Result<String, ConfigE
         "output_dir".to_owned(),
         toml::Value::String(config.output_dir.to_string_lossy().to_string()),
     );
+    match config.last_region {
+        Some(rect) => {
+            table.insert(
+                "last_region".to_owned(),
+                toml::Value::String(rect.to_string()),
+            );
+        }
+        None => {
+            table.remove("last_region");
+        }
+    }
 
     Ok(toml::to_string_pretty(&table)?)
 }
@@ -141,6 +155,7 @@ mod tests {
     fn config_toml_uses_output_dir_key() {
         let config = Config {
             output_dir: PathBuf::from("shots"),
+            last_region: None,
         };
 
         let text = config.to_toml().unwrap();
@@ -153,12 +168,33 @@ mod tests {
     fn config_toml_round_trips_output_dir() {
         let config = Config {
             output_dir: PathBuf::from("custom-shots"),
+            last_region: None,
         };
 
         let text = config.to_toml().unwrap();
         let parsed: Config = toml::from_str(&text).unwrap();
 
         assert_eq!(parsed.output_dir, PathBuf::from("custom-shots"));
+        assert_eq!(parsed.last_region, None);
+    }
+
+    #[test]
+    fn config_toml_round_trips_last_region() {
+        let config = Config {
+            output_dir: PathBuf::from("shots"),
+            last_region: Some(Rect {
+                x: 1,
+                y: 2,
+                width: 30,
+                height: 40,
+            }),
+        };
+
+        let text = config.to_toml().unwrap();
+        let parsed: Config = toml::from_str(&text).unwrap();
+
+        assert!(text.contains("last_region"));
+        assert_eq!(parsed.last_region, config.last_region);
     }
 
     #[test]
@@ -218,12 +254,19 @@ enabled = true
 
         Config {
             output_dir: PathBuf::from("new shots"),
+            last_region: Some(Rect {
+                x: 1,
+                y: 2,
+                width: 3,
+                height: 4,
+            }),
         }
         .save_to(&path)
         .unwrap();
         let value: toml::Value = toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
 
         assert_eq!(value["output_dir"].as_str(), Some("new shots"));
+        assert_eq!(value["last_region"].as_str(), Some("1,2,3,4"));
         assert_eq!(value["theme"].as_str(), Some("plain"));
         assert_eq!(value["future"]["enabled"].as_bool(), Some(true));
         fs::remove_dir_all(dir).unwrap();
@@ -237,6 +280,7 @@ enabled = true
 
         Config {
             output_dir: output_dir.clone(),
+            last_region: None,
         }
         .save_to(&path)
         .unwrap();
@@ -253,6 +297,7 @@ enabled = true
 
         Config {
             output_dir: output_dir.clone(),
+            last_region: None,
         }
         .save_to(&path)
         .unwrap();

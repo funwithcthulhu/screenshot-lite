@@ -54,6 +54,7 @@ fn main() -> Result<()> {
         }
         Command::Region {
             rect,
+            last,
             output,
             output_dir,
             open,
@@ -63,11 +64,9 @@ fn main() -> Result<()> {
             clipboard,
         } => {
             let output = capture_output(output, output_dir)?;
-            let rect = match rect {
-                Some(rect) => Some(rect),
-                None => Some(interactive::select_region()?),
-            };
-            let capture = capture::capture_region_to(output, rect)?;
+            let rect = selected_region(rect, last)?;
+            let capture = capture::capture_region_to(output, Some(rect))?;
+            remember_last_region(rect)?;
             maybe_copy(clipboard, &capture.image)?;
             let preview_action = maybe_preview(preview, &capture.path)?;
             let preview_result =
@@ -211,6 +210,26 @@ fn capture_output(
             Config::load()?.output_dir,
         )),
     }
+}
+
+fn selected_region(rect: Option<redact::Rect>, last: bool) -> Result<redact::Rect> {
+    if last {
+        return Config::load()?.last_region.context(
+            "no last region saved yet; run `shotlite region` or pass `--rect x,y,w,h` first",
+        );
+    }
+
+    match rect {
+        Some(rect) => Ok(rect),
+        None => Ok(interactive::select_region()?),
+    }
+}
+
+fn remember_last_region(rect: redact::Rect) -> Result<()> {
+    let mut config = Config::load()?;
+    config.last_region = Some(rect);
+    config.save()?;
+    Ok(())
 }
 
 fn after_capture(path: &std::path::Path, open: bool, reveal: bool) -> Result<()> {
