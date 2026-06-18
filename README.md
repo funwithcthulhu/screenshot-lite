@@ -166,12 +166,18 @@ shotlite config set output-dir C:\Users\you\Pictures\Screenshots
 
 ## Packaging
 
-Download the Windows zip from the GitHub release page, unzip it, then run the installer from the unpacked directory.
+Download the Windows installer from the GitHub release page and run it. A portable zip is also published; unzip it and run `install-windows.ps1` from the unpacked directory if you prefer the script-based installer.
 
 Build a Windows package:
 
 ```text
 powershell -ExecutionPolicy Bypass -File scripts\package-windows.ps1
+```
+
+Build the Windows installer after packaging:
+
+```text
+powershell -ExecutionPolicy Bypass -File scripts\build-windows-installer.ps1
 ```
 
 Install from the unpacked package:

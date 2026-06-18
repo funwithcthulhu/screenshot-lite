@@ -24,6 +24,7 @@ jobs:
           $packageVersion = $env:GITHUB_REF_NAME -replace '^v', ''
           .\scripts\package-windows.ps1 -Version $packageVersion
           .\scripts\test-package-windows.ps1 -PackageDir "target\dist\shotlite-$($env:GITHUB_REF_NAME)-windows-x86_64"
+          .\scripts\build-windows-installer.ps1 -Version $packageVersion -PackageDir "target\dist\shotlite-$($env:GITHUB_REF_NAME)-windows-x86_64"
       - name: Publish release
         shell: pwsh
         env:
@@ -31,15 +32,22 @@ jobs:
         run: |
           $version = $env:GITHUB_REF_NAME
           $zip = "target\dist\shotlite-$version-windows-x86_64.zip"
+          $installer = "target\dist\shotlite-$version-windows-x86_64-installer.exe"
           $notes = @"
           Windows package for shotlite $version.
 
+          Assets:
+          - shotlite-$version-windows-x86_64-installer.exe: self-extracting Windows installer.
+          - shotlite-$version-windows-x86_64.zip: portable package with install and uninstall scripts.
+
           Interactive region selection and tray mode are currently Windows-only.
+          Linux and macOS builds are CLI-first and do not include tray/global hotkeys.
           Clipboard and capture support depend on the local desktop/session.
           "@
           if (gh release view $version *> $null) {
             gh release edit $version --title "shotlite $version" --notes $notes
             gh release upload $version $zip --clobber
+            gh release upload $version $installer --clobber
           } else {
-            gh release create $version $zip --title "shotlite $version" --notes $notes --verify-tag
+            gh release create $version $zip $installer --title "shotlite $version" --notes $notes --verify-tag
           }

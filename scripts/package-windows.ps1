@@ -1,6 +1,6 @@
 param(
     [string]$Configuration = "release",
-    [string]$Version = "0.3.0",
+    [string]$Version = "0.4.0",
     [string]$SignToolPath = $env:SIGNTOOL_PATH,
     [string]$CertificateSha1 = $env:CODESIGN_CERT_SHA1
 )

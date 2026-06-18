@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+- Added clickable preview actions for copy path and delete.
+- Added `region --last` to reuse the last successful region rectangle.
+- Added `monitor` capture and `monitor --index`.
+- Added `config output-dir` as a shorter way to show or set the screenshot directory.
+- Added a Windows self-extracting installer release asset.
+
 ## 0.3.0
 
 - Added tray menu actions for copying and revealing the last screenshot.
